@@ -2,6 +2,7 @@ package com.nnois.banner;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.nnois.utils.TerminalColors;
 
 public class Banner {
 
@@ -29,7 +30,6 @@ public class Banner {
     };
 
     public static String format() {
-        String border = colorize("=".repeat(WIDTH), DARK_GRAY);
         String styledSubtitle = center(formatSubtitleAcronym(SUBTITLE), WIDTH, SUBTITLE.length());
 
         StringBuilder logoBuilder = new StringBuilder();
@@ -37,11 +37,12 @@ public class Banner {
             logoBuilder.append(applyAnaglyph(center(line, WIDTH, line.length()))).append("\n");
         }
 
-        return new StringBuilder()
+        String banner = new StringBuilder()
                 .append("\n")
                 .append(logoBuilder)
                 .append(styledSubtitle).append("\n")
                 .toString();
+        return TerminalColors.enabled() ? banner : banner.replaceAll("\u001B\\[[0-9;]*m", "");
     }
 
     public static void print() {

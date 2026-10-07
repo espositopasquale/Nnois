@@ -3,10 +3,12 @@ package com.nnois.disambiguator;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import com.nnois.nlp.LeskNlp;
 import java.util.Map;
 import java.util.Set;
 
@@ -33,21 +35,14 @@ public class JwiLeskDisambiguator implements AutoCloseable {
     private final IStemmer stemmer;
     private final Map<ISynsetID, Map<String, Double>> signatureCache = new HashMap<>();
 
-    private static final Set<String> STOP_WORDS = new HashSet<>(Arrays.asList(
-            "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
-            "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being",
-            "below", "between", "both", "but", "by", "can't", "cannot", "could", "did",
-            "do", "does", "doing", "down", "during", "each", "few", "for", "from", "further",
-            "had", "has", "have", "having", "he", "her", "here", "him", "himself", "his",
-            "how", "i", "if", "in", "into", "is", "it", "its", "itself", "more", "most",
-            "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought",
-            "our", "ours", "out", "over", "own", "same", "she", "should", "so", "some",
-            "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then",
-            "there", "these", "they", "this", "those", "through", "to", "too", "under",
-            "until", "up", "very", "was", "we", "were", "what", "when", "where", "which",
-            "while", "who", "whom", "why", "with", "would", "you", "your", "yours"));
+    private final LeskNlp nlp;
 
     public JwiLeskDisambiguator(String wordnetDictPath) throws IOException {
+        this(wordnetDictPath, new LeskNlp());
+    }
+
+    public JwiLeskDisambiguator(String wordnetDictPath, LeskNlp nlp) throws IOException {
+        this.nlp = Objects.requireNonNull(nlp, "nlp");
         URL url = JwiLeskDisambiguator.class.getClassLoader().getResource("dict");
         if (url == null) {
             File dictDir = new File(wordnetDictPath);
@@ -61,6 +56,12 @@ public class JwiLeskDisambiguator implements AutoCloseable {
     }
 
     public ISynset disambiguate(String word, POS pos, List<String> sentenceTokens) {
+        if (word == null || word.isBlank()) {
+            return null;
+        }
+        if (pos == null) {
+            throw new IllegalArgumentException("WordNet POS is required for the target word");
+        }
         String targetLemma = getLemma(word, pos);
         IIndexWord idxWord = dict.getIndexWord(targetLemma, pos);
 
@@ -116,31 +117,13 @@ public class JwiLeskDisambiguator implements AutoCloseable {
             return null;
         }
 
-        String cleaned = rawWord.toLowerCase().trim().replace(" ", "_");
+        String cleaned = rawWord.toLowerCase(Locale.ROOT).trim().replace(" ", "_");
         if (cleaned.isEmpty()) {
             return null;
         }
 
-        if (pos != null) {
-            List<String> stems = stemmer.findStems(cleaned, pos);
-            return stems.isEmpty() ? cleaned : stems.get(0);
-        }
-
-        List<POS> posOrder = Arrays.asList(POS.NOUN, POS.VERB, POS.ADJECTIVE, POS.ADVERB);
-        String bestStem = null;
-
-        for (POS fallbackPos : posOrder) {
-            List<String> stems = stemmer.findStems(cleaned, fallbackPos);
-            if (!stems.isEmpty()) {
-                String candidate = stems.get(0);
-                if (bestStem == null || candidate.length() < bestStem.length()
-                        || (candidate.length() == bestStem.length() && candidate.compareTo(bestStem) < 0)) {
-                    bestStem = candidate;
-                }
-            }
-        }
-
-        return bestStem != null ? bestStem : cleaned;
+        List<String> stems = stemmer.findStems(cleaned, pos);
+        return stems.isEmpty() ? cleaned : stems.get(0);
     }
 
     private Map<String, Integer> buildContextFrequencies(List<String> sentenceTokens, String targetLemma) {
@@ -149,9 +132,10 @@ public class JwiLeskDisambiguator implements AutoCloseable {
             return contextFreq;
         }
 
-        for (String token : sentenceTokens) {
-            String lemma = getLemma(token, null);
-            if (!isUsableToken(lemma) || lemma.equals(targetLemma)) {
+        for (LeskNlp.Term term : nlp.analyze(sentenceTokens.stream()
+                .filter(Objects::nonNull).collect(java.util.stream.Collectors.joining(" ")))) {
+            String lemma = getLemma(term.lemma(), term.pos());
+            if (lemma.equals(targetLemma)) {
                 continue;
             }
             contextFreq.merge(lemma, 1, Integer::sum);
@@ -193,11 +177,8 @@ public class JwiLeskDisambiguator implements AutoCloseable {
             return terms;
         }
 
-        for (String token : synset.getGloss().toLowerCase().split("\\W+")) {
-            String lemma = getLemma(token, null);
-            if (isUsableToken(lemma)) {
-                terms.add(lemma);
-            }
+        for (LeskNlp.Term term : nlp.analyze(synset.getGloss())) {
+            terms.add(getLemma(term.lemma(), term.pos()));
         }
 
         return terms;
@@ -222,12 +203,8 @@ public class JwiLeskDisambiguator implements AutoCloseable {
             return;
         }
 
-        for (String raw : text.toLowerCase().split("\\W+")) {
-            String lemma = getLemma(raw, null);
-            if (!isUsableToken(lemma)) {
-                continue;
-            }
-
+        for (LeskNlp.Term term : nlp.analyze(text)) {
+            String lemma = getLemma(term.lemma(), term.pos());
             signature.merge(lemma, weight, Double::sum);
         }
     }
@@ -251,16 +228,6 @@ public class JwiLeskDisambiguator implements AutoCloseable {
             }
         }
         return matches;
-    }
-
-    private boolean isUsableToken(String token) {
-        if (token == null) {
-            return false;
-        }
-
-        return token.length() > 2
-                && !STOP_WORDS.contains(token)
-                && token.chars().anyMatch(Character::isLetter);
     }
 
     @Override

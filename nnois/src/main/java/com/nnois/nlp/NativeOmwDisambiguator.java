@@ -15,9 +15,16 @@ import java.util.stream.Collectors;
 public class NativeOmwDisambiguator {
 
     private final Connection conn;
+    private final OmwSenseModel senseModel;
+    private boolean modelUnavailable;
 
     public NativeOmwDisambiguator(Connection conn) {
+        this(conn, OllamaSenseModel.configured());
+    }
+
+    public NativeOmwDisambiguator(Connection conn, OmwSenseModel senseModel) {
         this.conn = conn;
+        this.senseModel = senseModel;
     }
 
     public static class CandidateSynset {
@@ -44,6 +51,10 @@ public class NativeOmwDisambiguator {
             List<String> contextLemmas,
             Set<String> stopwords,
             String preferredPos) throws SQLException {
+
+        if (sourceLemma == null || sourceLemma.isBlank() || stopwords.contains(sourceLemma.toLowerCase().trim())) {
+            return null;
+        }
 
         List<CandidateSynset> candidates = fetchCandidateSynsets(sourceLemma, langCode);
 
@@ -82,14 +93,40 @@ public class NativeOmwDisambiguator {
                 .collect(Collectors.toSet());
 
         CandidateSynset bestSynset = chooseDeterministicFallback(candidates);
-        int maxOverlap = -1;
+        if (senseModel != null && !modelUnavailable) {
+            List<CandidateSynset> defined = candidates.stream()
+                    .filter(c -> c.gloss != null && !c.gloss.isBlank()).toList();
+            List<String> contentContext = contextLemmas.stream()
+                    .filter(Stopwords::isWord).filter(w -> !stopwords.contains(w.toLowerCase())).toList();
+            if (defined.size() > 1 && !contentContext.isEmpty()) {
+                try {
+                    double[] scores = senseModel.score(String.join(" ", contentContext), defined.stream()
+                            .map(c -> Arrays.stream(c.gloss.split("(?U)\\W+"))
+                                    .filter(Stopwords::isWord)
+                                    .filter(w -> !stopwords.contains(w.toLowerCase()))
+                                    .collect(Collectors.joining(" "))).toList());
+                    if (scores.length != defined.size()) throw new IllegalArgumentException("Invalid sense score count");
+                    double maxScore = -Double.MAX_VALUE;
+                    for (int i = 0; i < scores.length; i++) {
+                        if (!Double.isFinite(scores[i])) throw new IllegalArgumentException("Invalid sense score");
+                        if (scores[i] > maxScore) { maxScore = scores[i]; bestSynset = defined.get(i); }
+                    }
+                    return bestSynset;
+                } catch (Exception error) {
+                    if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                    modelUnavailable = true;
+                    System.err.println("[WSD] Embedding model unavailable; using lexical overlap: " + error.getMessage());
+                }
+            }
+        }
+        int maxOverlap = 0;
 
         for (CandidateSynset candidate : candidates) {
             if (candidate.gloss == null || candidate.gloss.isBlank()) {
                 continue;
             }
 
-            Set<String> glossWords = Arrays.stream(candidate.gloss.toLowerCase().split("\\W+"))
+            Set<String> glossWords = Arrays.stream(candidate.gloss.toLowerCase().split("(?U)\\W+"))
                     .filter(w -> w.length() > 2)
                     .filter(w -> !stopwords.contains(w))
                     .collect(Collectors.toSet());
@@ -150,7 +187,7 @@ public class NativeOmwDisambiguator {
     private List<CandidateSynset> fetchCandidateSynsets(String lemma, String langCode) throws SQLException {
         List<CandidateSynset> candidates = new ArrayList<>();
 
-        String sql = "SELECT l.synset_offset, l.pos, l.lemma, "
+        String sql = "SELECT DISTINCT l.synset_offset, l.pos, l.lemma, "
                 + "COALESCE(d_local.def, d_en.def, d_eng.def, '') AS gloss "
                 + "FROM synset_lemmas l "
                 + "LEFT JOIN synset_def d_local ON l.synset_offset = d_local.synset_offset "
@@ -159,7 +196,7 @@ public class NativeOmwDisambiguator {
                 + "AND l.pos = d_en.pos AND d_en.lang = 'en' "
                 + "LEFT JOIN synset_def d_eng ON l.synset_offset = d_eng.synset_offset "
                 + "AND l.pos = d_eng.pos AND d_eng.lang = 'eng' "
-                + "WHERE LOWER(l.lemma) = ? AND l.lang = ?";
+                + "WHERE LOWER(l.lemma) = ? AND l.lang = ? ORDER BY l.synset_offset, l.pos, gloss";
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, lemma.toLowerCase().trim());

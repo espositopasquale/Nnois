@@ -13,9 +13,6 @@ import java.util.Set;
 
 import com.nnois.utils.ResourceLoaderHelper;
 
-import opennlp.tools.langdetect.Language;
-import opennlp.tools.langdetect.LanguageDetectorME;
-import opennlp.tools.langdetect.LanguageDetectorModel;
 
 public class AutoTuningMultilingualPipeline implements AutoCloseable {
 
@@ -46,6 +43,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         public final OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate;
         public final List<NativeMultilingualPipeline.TransparencyResult> transparencyResults;
         public final List<NominalLanguageTransparency> nominalLanguageTransparencies;
+        public final NativeOmwDisambiguator.CandidateSynset chosenSense;
 
         public ContrastiveResult(AnalysisMode mode,
                 String detectedLanguage,
@@ -55,6 +53,16 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
                 OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate,
                 List<NativeMultilingualPipeline.TransparencyResult> transparencyResults,
                 List<NominalLanguageTransparency> nominalLanguageTransparencies) {
+            this(mode, detectedLanguage, languageConfidence, chosenWord, analyzedNominalUnits,
+                    nominalAggregate, transparencyResults, nominalLanguageTransparencies, null);
+        }
+
+        public ContrastiveResult(AnalysisMode mode, String detectedLanguage, double languageConfidence,
+                String chosenWord, int analyzedNominalUnits,
+                OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate,
+                List<NativeMultilingualPipeline.TransparencyResult> transparencyResults,
+                List<NominalLanguageTransparency> nominalLanguageTransparencies,
+                NativeOmwDisambiguator.CandidateSynset chosenSense) {
             this.mode = mode;
             this.detectedLanguage = detectedLanguage;
             this.languageConfidence = languageConfidence;
@@ -63,6 +71,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
             this.nominalAggregate = nominalAggregate;
             this.transparencyResults = transparencyResults;
             this.nominalLanguageTransparencies = nominalLanguageTransparencies;
+            this.chosenSense = chosenSense;
         }
     }
 
@@ -143,38 +152,36 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
     }
 
     private final Connection sqliteConn;
-    private final LanguageDetectorME langDetector;
+    private final LanguageIdentification languageIdentification;
     private final Map<String, NativeLanguageNLP> nlpCache = new HashMap<>();
     private final Map<String, Set<String>> stopwordsCache = new HashMap<>();
 
     public AutoTuningMultilingualPipeline(String sqliteDbPath, String langDetectorModelPath) throws Exception {
 
+        this.languageIdentification = new LanguageIdentification(langDetectorModelPath);
         ResourceLoaderHelper resourceLoader = new ResourceLoaderHelper();
         this.sqliteConn = resourceLoader.loadSqliteFromResources(sqliteDbPath);
 
-        try (InputStream langIn = getClass()
-                .getClassLoader()
-                .getResourceAsStream("langdetect-183.bin")) {
+    }
 
-            if (langIn == null) {
-                throw new IllegalArgumentException(
-                        "Language detector model not found in resources: langdetect-183.bin"
-                );
-            }
+    /** Owns the supplied connection; callers can share the CLI engine with an HTTP service. */
+    public AutoTuningMultilingualPipeline(Connection connection, String langDetectorModelPath) throws Exception {
+        this.languageIdentification = new LanguageIdentification(langDetectorModelPath);
+        this.sqliteConn = java.util.Objects.requireNonNull(connection);
+    }
 
-            LanguageDetectorModel model = new LanguageDetectorModel(langIn);
-            this.langDetector = new LanguageDetectorME(model);
-        }
+    public LanguageIdentification.Detection detectLanguage(String text) {
+        return languageIdentification.detect(text);
     }
 
     public List<NativeMultilingualPipeline.TransparencyResult> processAutoDetectedSentence(
             String rawSentence, String targetWord) throws Exception {
 
-        Language predicted = langDetector.predictLanguage(rawSentence);
-        String detectedLangCode = predicted.getLang();
-        double confidence = predicted.getConfidence();
+        var predicted = detectLanguage(rawSentence);
+        String detectedLangCode = resolveOmwLangCode(predicted.code());
+        double confidence = predicted.confidence();
 
-        System.out.printf("[AutoPipeline] Detected Language: '%s' (Confidence: %.2f)%n", detectedLangCode, confidence);
+
 
         NativeLanguageNLP nativeNlp = getOrCreateLanguageNlp(detectedLangCode);
         Set<String> stopwords = getOrCreateStopwords(detectedLangCode);
@@ -197,8 +204,8 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
             return Collections.emptyList();
         }
 
-        System.out.println("[AutoPipeline] Disambiguated Synset Offset : " + bestSynset.offset + "-" + bestSynset.pos);
-        System.out.println("[AutoPipeline] Native Definition          : " + bestSynset.gloss);
+        System.out.println("  OMW sense   " + bestSynset.offset + "-" + bestSynset.pos);
+        System.out.println("  Definition  " + bestSynset.gloss);
 
         return fetchAllLanguagesAndCalculateTransparency(targetWord, bestSynset.offset, bestSynset.pos);
     }
@@ -206,15 +213,15 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
     public AutoAnalysisResult processAutoDetectedSentenceWithNominalAggregate(
             String rawSentence, String targetWord) throws Exception {
 
-        Language predicted = langDetector.predictLanguage(rawSentence);
-        String detectedLangCode = predicted.getLang();
-        double confidence = predicted.getConfidence();
+        var predicted = detectLanguage(rawSentence);
+        String detectedLangCode = resolveOmwLangCode(predicted.code());
+        double confidence = predicted.confidence();
 
-        System.out.printf("[AutoPipeline] Detected Language: '%s' (Confidence: %.2f)%n", detectedLangCode, confidence);
+
 
         OpenNLPMWEExtractor nominalExtractor = buildNominalExtractorForLanguage(detectedLangCode);
         OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate = nominalExtractor
-                .analyzeNominalAggregateScore(rawSentence, detectedLangCode, sqliteConn);
+                .analyzeNominalAggregateScore(rawSentence, detectedLangCode, sqliteConn, getOrCreateStopwords(detectedLangCode));
 
         List<NativeMultilingualPipeline.TransparencyResult> transparencyResults
                 = processDetectedLanguageSentence(rawSentence, targetWord, detectedLangCode);
@@ -235,23 +242,24 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         double confidence;
 
         if (autoDetectLanguage) {
-            Language predicted = langDetector.predictLanguage(rawSentence);
-            selectedLangCode = predicted.getLang();
-            confidence = predicted.getConfidence();
-            System.out.printf("[AutoPipeline] Detected Language: '%s' (Confidence: %.2f)%n", selectedLangCode, confidence);
+            var predicted = detectLanguage(rawSentence);
+            selectedLangCode = resolveOmwLangCode(predicted.code());
+            confidence = predicted.confidence();
+
         } else {
             String manual = languageHint == null ? "" : languageHint.trim();
             if (manual.isEmpty()) {
-                Language predicted = langDetector.predictLanguage(rawSentence);
-                selectedLangCode = predicted.getLang();
-                confidence = predicted.getConfidence();
-                System.out.printf("[AutoPipeline] Manual language missing. Falling back to auto-detect: '%s' (Confidence: %.2f)%n",
-                        selectedLangCode,
-                        confidence);
+                var predicted = detectLanguage(rawSentence);
+                selectedLangCode = resolveOmwLangCode(predicted.code());
+                confidence = predicted.confidence();
+
             } else {
-                selectedLangCode = manual.toLowerCase();
+                selectedLangCode = LanguageIdentification.normalizeCode(manual);
+                if (!LanguageIdentification.supported(selectedLangCode)) {
+                    throw new IllegalArgumentException("Unsupported analysis language: " + manual);
+                }
                 confidence = 1.0;
-                System.out.printf("[AutoPipeline] Using manually selected language: '%s'%n", selectedLangCode);
+
             }
         }
 
@@ -259,11 +267,10 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
 
         OpenNLPMWEExtractor nominalExtractor = buildNominalExtractorForLanguage(selectedLangCode);
         OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate = nominalExtractor
-                .analyzeNominalAggregateScore(rawSentence, omwLangCode, sqliteConn);
+                .analyzeNominalAggregateScore(rawSentence, omwLangCode, sqliteConn, getOrCreateStopwords(omwLangCode));
 
         if (targetWord != null && !targetWord.trim().isEmpty()) {
-            List<NativeMultilingualPipeline.TransparencyResult> transparencyResults
-                    = processDetectedLanguageSentence(rawSentence, targetWord.trim(), omwLangCode);
+            ContextualAnalysis contextual = analyzeWordInContext(rawSentence, targetWord.trim(), omwLangCode);
 
             return new ContrastiveResult(
                     AnalysisMode.CHOSEN_WORD,
@@ -272,8 +279,9 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
                     targetWord.trim(),
                     0,
                     nominalAggregate,
-                    transparencyResults,
-                    Collections.emptyList());
+                    contextual.translations(),
+                    Collections.emptyList(),
+                    contextual.sense());
         }
 
         AggregateNominalTransparency aggregate
@@ -297,9 +305,9 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         }
 
         String sourceLemma = sourceWord.trim().toLowerCase();
-        String hinted = languageHint == null ? "" : languageHint.trim().toLowerCase();
+        String hinted = LanguageIdentification.normalizeCode(languageHint);
         if (hinted.isEmpty()) {
-            hinted = langDetector.predictLanguage(sourceLemma).getLang();
+            hinted = detectLanguage(sourceLemma).code();
         }
 
         String resolvedLang = resolveOmwLangCode(hinted);
@@ -383,7 +391,8 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         int analyzedUnits = 0;
 
         for (OpenNLPMWEExtractor.NominalUnitScore unit : nominalAggregate.units) {
-            var bestSynset = disambiguator.disambiguateNative(unit.lemma, detectedLangCode, lemmatizedContext, stopwords);
+            var bestSynset = disambiguator.disambiguateNative(unit.lemma, resolveOmwLangCode(detectedLangCode),
+                    lemmatizedContext, stopwords, "n");
             if (bestSynset == null) {
                 continue;
             }
@@ -393,8 +402,8 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
             List<NativeMultilingualPipeline.TransparencyResult> unitResults
                     = fetchAllLanguagesAndCalculateTransparency(unit.lemma, bestSynset.offset, bestSynset.pos);
 
+            Map<String, Double> bestPerLanguage = bestLanguageScores(unitResults);
             for (NativeMultilingualPipeline.TransparencyResult unitResult : unitResults) {
-                languageTotals.merge(unitResult.lang, unitResult.score, Double::sum);
                 details.add(new NominalLanguageTransparency(
                         unit.lemma,
                         unit.unitType,
@@ -402,14 +411,16 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
                         unitResult.lemma,
                         unitResult.score));
             }
+            bestPerLanguage.forEach((language, score) -> languageTotals.merge(language, score, Double::sum));
         }
 
         List<NativeMultilingualPipeline.TransparencyResult> aggregateResults = new ArrayList<>();
         for (Map.Entry<String, Double> entry : languageTotals.entrySet()) {
-            double normalizedScore = analyzedUnits > 0 ? entry.getValue() / analyzedUnits : 0.0;
+            double normalizedScore = nominalAggregate.totalNominalUnits > 0
+                    ? entry.getValue() / nominalAggregate.totalNominalUnits : 0.0;
             aggregateResults.add(new NativeMultilingualPipeline.TransparencyResult(
                     entry.getKey(),
-                    "SUM_NOMINAL_UNITS",
+                    "MEAN_NOMINAL_UNITS",
                     normalizedScore));
         }
 
@@ -423,8 +434,22 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         return new AggregateNominalTransparency(analyzedUnits, aggregateResults, details);
     }
 
+    static Map<String, Double> bestLanguageScores(List<NativeMultilingualPipeline.TransparencyResult> translations) {
+        Map<String, Double> scores = new HashMap<>();
+        for (var translation : translations) scores.merge(translation.lang, translation.score, Math::max);
+        return scores;
+    }
+
     private List<NativeMultilingualPipeline.TransparencyResult> processDetectedLanguageSentence(
             String rawSentence, String targetWord, String detectedLangCode) throws Exception {
+        return analyzeWordInContext(rawSentence, targetWord, detectedLangCode).translations();
+    }
+
+    private record ContextualAnalysis(NativeOmwDisambiguator.CandidateSynset sense,
+            List<NativeMultilingualPipeline.TransparencyResult> translations) { }
+
+    private ContextualAnalysis analyzeWordInContext(String rawSentence, String targetWord, String detectedLangCode)
+            throws Exception {
 
         NativeLanguageNLP nativeNlp = getOrCreateLanguageNlp(detectedLangCode);
         Set<String> stopwords = getOrCreateStopwords(detectedLangCode);
@@ -433,21 +458,24 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         List<String> lemmatizedContext = nativeNlp.lemmatizeTokens(tokens);
 
         NativeOmwDisambiguator disambiguator = new NativeOmwDisambiguator(sqliteConn);
-        var bestSynset = disambiguator.disambiguateNative(targetWord, detectedLangCode, lemmatizedContext, stopwords);
+        var bestSynset = disambiguator.disambiguateNative(targetWord, detectedLangCode, lemmatizedContext, stopwords,
+                nativeNlp.inferPreferredOmwPos(rawSentence, targetWord));
 
         if (bestSynset == null) {
             System.err.printf("[AutoPipeline] No candidate synsets found for '%s' in language '%s'.%n", targetWord,
                     detectedLangCode);
-            return Collections.emptyList();
+            return new ContextualAnalysis(null, Collections.emptyList());
         }
 
-        System.out.println("[AutoPipeline] Disambiguated Synset Offset : " + bestSynset.offset + "-" + bestSynset.pos);
-        System.out.println("[AutoPipeline] Native Definition          : " + bestSynset.gloss);
+        System.out.println("  OMW sense   " + bestSynset.offset + "-" + bestSynset.pos);
+        System.out.println("  Definition  " + bestSynset.gloss);
 
-        return fetchAllLanguagesAndCalculateTransparency(targetWord, bestSynset.offset, bestSynset.pos);
+        return new ContextualAnalysis(bestSynset,
+                fetchAllLanguagesAndCalculateTransparency(targetWord, bestSynset.offset, bestSynset.pos));
     }
 
     private OpenNLPMWEExtractor buildNominalExtractorForLanguage(String langCode) {
+        requireSupportedLanguage(langCode);
         String openNlpLangCode = toOpenNlpLanguageCode(langCode);
         String tokenModel = String.format("opennlp-%s-token.bin", openNlpLangCode);
         String posModel = String.format("opennlp-%s-pos.bin", openNlpLangCode);
@@ -458,6 +486,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
     }
 
     private NativeLanguageNLP getOrCreateLanguageNlp(String langCode) throws Exception {
+        requireSupportedLanguage(langCode);
         String openNlpLangCode = toOpenNlpLanguageCode(langCode);
 
         if (nlpCache.containsKey(openNlpLangCode)) {
@@ -468,11 +497,18 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         String posModel = String.format("opennlp-%s-pos.bin", openNlpLangCode);
         String lemmaDict = String.format("%s-lemmatizer.dict", openNlpLangCode);
 
-        System.out.printf("[AutoPipeline] Loading native OpenNLP models for language '%s'...%n", openNlpLangCode);
+
         NativeLanguageNLP nlp = new NativeLanguageNLP(tokenizerModel, posModel, lemmaDict);
 
         nlpCache.put(openNlpLangCode, nlp);
         return nlp;
+    }
+
+    private static void requireSupportedLanguage(String langCode) {
+        if (!LanguageIdentification.supported(langCode)) {
+            throw new IllegalArgumentException("No bundled NLP models for " + langCode
+                    + ". Choose en, it, fr, de, es, pt or nl.");
+        }
     }
 
     private String toOpenNlpLanguageCode(String langCode) {
@@ -540,7 +576,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
             String path = String.format("stopwords-%s.txt", code);
             try (InputStream is = getClass().getClassLoader().getResourceAsStream(path)) {
                 if (is != null) {
-                    Set<String> set = new HashSet<>();
+                    Set<String> set = Stopwords.forLanguage(code);
                     try (var reader = new java.io.BufferedReader(
                             new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
                         String line;
@@ -555,7 +591,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
                 }
             } catch (Exception ignored) {
             }
-            return Collections.emptySet();
+            return Stopwords.forLanguage(code);
         });
     }
 

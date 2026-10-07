@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import opennlp.tools.lemmatizer.DictionaryLemmatizer;
+import opennlp.tools.lemmatizer.LemmatizerME;
+import opennlp.tools.lemmatizer.LemmatizerModel;
 import opennlp.tools.postag.POSModel;
 import opennlp.tools.postag.POSTaggerME;
 import opennlp.tools.tokenize.TokenizerME;
@@ -27,9 +29,10 @@ public class NativeLanguageNLP {
     private TokenizerME tokenizer;
     private POSTaggerME posTagger;
     private DictionaryLemmatizer lemmatizer;
+    private LemmatizerME statisticalLemmatizer;
 
     public NativeLanguageNLP(String tokenizerModelPath, String posModelPath, String lemmatizerDictPath) throws Exception {
-        try (InputStream tokenIn = getClass().getClassLoader().getResourceAsStream(tokenizerModelPath); InputStream posIn = getClass().getClassLoader().getResourceAsStream(posModelPath); InputStream lemmaIn = getClass().getClassLoader().getResourceAsStream(lemmatizerDictPath)) {
+        try (InputStream tokenIn = NlpModelResources.open(tokenizerModelPath, "tokens"); InputStream posIn = NlpModelResources.open(posModelPath, "pos"); InputStream lemmaIn = getClass().getClassLoader().getResourceAsStream(lemmatizerDictPath)) {
 
             if (tokenIn != null) {
                 this.tokenizer = new TokenizerME(new TokenizerModel(tokenIn));
@@ -39,6 +42,11 @@ public class NativeLanguageNLP {
             }
             if (lemmaIn != null) {
                 this.lemmatizer = new DictionaryLemmatizer(lemmaIn);
+            }
+        }
+        if (lemmatizer == null) {
+            try (InputStream in = NlpModelResources.open(lemmatizerDictPath, "lemmas")) {
+                if (in != null) statisticalLemmatizer = new LemmatizerME(new LemmatizerModel(in));
             }
         }
     }
@@ -51,10 +59,11 @@ public class NativeLanguageNLP {
     }
 
     public List<String> lemmatizeTokens(List<String> tokens) {
-        if (posTagger != null && lemmatizer != null) {
+        if (posTagger != null && (lemmatizer != null || statisticalLemmatizer != null)) {
             String[] tokenArray = tokens.toArray(String[]::new);
             String[] tags = posTagger.tag(tokenArray);
-            String[] lemmas = lemmatizer.lemmatize(tokenArray, tags);
+            String[] lemmas = lemmatizer != null ? lemmatizer.lemmatize(tokenArray, tags)
+                    : statisticalLemmatizer.lemmatize(tokenArray, tags);
 
             List<String> result = new ArrayList<>();
             for (int i = 0; i < lemmas.length; i++) {

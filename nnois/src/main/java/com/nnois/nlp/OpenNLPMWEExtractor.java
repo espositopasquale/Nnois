@@ -7,11 +7,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import edu.mit.jwi.item.POS;
 import opennlp.tools.chunker.ChunkerME;
 import opennlp.tools.chunker.ChunkerModel;
 import opennlp.tools.lemmatizer.DictionaryLemmatizer;
+import opennlp.tools.lemmatizer.LemmatizerME;
+import opennlp.tools.lemmatizer.LemmatizerModel;
 import opennlp.tools.postag.POSModel;
 import opennlp.tools.postag.POSTaggerME;
 import opennlp.tools.tokenize.TokenizerME;
@@ -38,11 +41,20 @@ public class OpenNLPMWEExtractor {
         public final double totalAggregateScore;
         public final int totalNominalUnits;
         public final List<NominalUnitScore> units;
+        public final int totalWords;
+        public final int consideredWords;
 
         public NominalAggregateResult(double totalAggregateScore, int totalNominalUnits, List<NominalUnitScore> units) {
+            this(totalAggregateScore, totalNominalUnits, units, totalNominalUnits, totalNominalUnits);
+        }
+
+        public NominalAggregateResult(double totalAggregateScore, int totalNominalUnits, List<NominalUnitScore> units,
+                int totalWords, int consideredWords) {
             this.totalAggregateScore = totalAggregateScore;
             this.totalNominalUnits = totalNominalUnits;
             this.units = units;
+            this.totalWords = totalWords;
+            this.consideredWords = consideredWords;
         }
     }
 
@@ -50,10 +62,11 @@ public class OpenNLPMWEExtractor {
     private POSTaggerME posTagger;
     private ChunkerME chunker;
     private DictionaryLemmatizer lemmatizer;
+    private LemmatizerME statisticalLemmatizer;
 
     public OpenNLPMWEExtractor(String tokenModelPath, String posModelPath, String chunkerModelPath,
             String lemmaDictPath) {
-        try (InputStream tokenIs = getClass().getClassLoader().getResourceAsStream(tokenModelPath); InputStream posIs = getClass().getClassLoader().getResourceAsStream(posModelPath); InputStream chunkerIs = getClass().getClassLoader().getResourceAsStream(chunkerModelPath); InputStream lemmaIs = getClass().getClassLoader().getResourceAsStream(lemmaDictPath)) {
+        try (InputStream tokenIs = NlpModelResources.open(tokenModelPath, "tokens"); InputStream posIs = NlpModelResources.open(posModelPath, "pos"); InputStream chunkerIs = getClass().getClassLoader().getResourceAsStream(chunkerModelPath); InputStream lemmaIs = getClass().getClassLoader().getResourceAsStream(lemmaDictPath)) {
 
             if (tokenIs != null) {
                 this.tokenizer = new TokenizerME(new TokenizerModel(tokenIs));
@@ -66,6 +79,11 @@ public class OpenNLPMWEExtractor {
             }
             if (lemmaIs != null) {
                 this.lemmatizer = new DictionaryLemmatizer(lemmaIs);
+            }
+            if (lemmatizer == null) {
+                try (InputStream in = NlpModelResources.open(lemmaDictPath, "lemmas")) {
+                    if (in != null) statisticalLemmatizer = new LemmatizerME(new LemmatizerModel(in));
+                }
             }
 
         } catch (Exception e) {
@@ -137,6 +155,11 @@ public class OpenNLPMWEExtractor {
     }
 
     public NominalAggregateResult analyzeNominalAggregateScore(String text, String langCode, Connection sqliteConn) {
+        return analyzeNominalAggregateScore(text, langCode, sqliteConn, Stopwords.forLanguage(langCode));
+    }
+
+    public NominalAggregateResult analyzeNominalAggregateScore(String text, String langCode, Connection sqliteConn,
+            Set<String> stopwords) {
         List<NominalUnitScore> units = new ArrayList<>();
 
         if (text == null || text.trim().isEmpty()) {
@@ -145,7 +168,11 @@ public class OpenNLPMWEExtractor {
 
         String[] tokens = (tokenizer != null) ? tokenizer.tokenize(text) : text.trim().split("\\s+");
         String[] posTags = (posTagger != null) ? posTagger.tag(tokens) : new String[tokens.length];
-        String[] lemmas = (lemmatizer != null && posTagger != null) ? lemmatizer.lemmatize(tokens, posTags) : tokens;
+        String[] lemmas = tokens.clone();
+        if (posTagger != null) {
+            if (lemmatizer != null) lemmas = lemmatizer.lemmatize(tokens, posTags);
+            else if (statisticalLemmatizer != null) lemmas = statisticalLemmatizer.lemmatize(tokens, posTags);
+        }
 
         for (int i = 0; i < lemmas.length; i++) {
             if ("O".equals(lemmas[i])) {
@@ -157,6 +184,14 @@ public class OpenNLPMWEExtractor {
 
         Span[] chunkSpans = (chunker != null && posTagger != null) ? chunker.chunkAsSpans(tokens, posTags) : new Span[0];
         boolean[] consumed = new boolean[tokens.length];
+        boolean[] eligible = new boolean[tokens.length];
+        int totalWords = 0;
+        int consideredWords = 0;
+        for (int i = 0; i < tokens.length; i++) {
+            eligible[i] = Stopwords.isWord(tokens[i]) && !stopwords.contains(tokens[i].toLowerCase())
+                    && !stopwords.contains(lemmas[i]);
+            if (eligible[i]) totalWords++;
+        }
 
         for (Span span : chunkSpans) {
             if (span.length() <= 1 || !"NP".equalsIgnoreCase(span.getType())) {
@@ -164,7 +199,9 @@ public class OpenNLPMWEExtractor {
             }
 
             StringBuilder mweBuilder = new StringBuilder();
+            boolean allEligible = true;
             for (int i = span.getStart(); i < span.getEnd(); i++) {
+                allEligible &= eligible[i];
                 mweBuilder.append(lemmas[i]);
                 if (i < span.getEnd() - 1) {
                     mweBuilder.append("_");
@@ -172,7 +209,8 @@ public class OpenNLPMWEExtractor {
             }
 
             String candidateMwe = mweBuilder.toString();
-            if (isMweInOmw(candidateMwe, langCode, sqliteConn)) {
+            if (allEligible && isMweInOmw(candidateMwe, langCode, sqliteConn)) {
+                consideredWords += span.length();
                 units.add(new NominalUnitScore(candidateMwe, "NOMINAL_MWE", 1.0));
                 for (int i = span.getStart(); i < span.getEnd(); i++) {
                     consumed[i] = true;
@@ -181,22 +219,19 @@ public class OpenNLPMWEExtractor {
         }
 
         for (int i = 0; i < tokens.length; i++) {
-            if (consumed[i]) {
+            if (consumed[i] || !eligible[i]) {
                 continue;
             }
 
             POS wordNetPos = PosMapper.mapToWordNetPOS(posTags[i]);
             if (wordNetPos == POS.NOUN || isNominalLemmaInOmw(lemmas[i], langCode, sqliteConn)) {
                 units.add(new NominalUnitScore(lemmas[i], "NOMINAL_TOKEN", 1.0));
+                consideredWords++;
             }
         }
 
-        double total = 0.0;
-        for (NominalUnitScore unit : units) {
-            total += unit.score;
-        }
-
-        return new NominalAggregateResult(total, units.size(), units);
+        return new NominalAggregateResult(totalWords == 0 ? 0.0 : (double) consideredWords / totalWords,
+                units.size(), units, totalWords, consideredWords);
     }
 
     private boolean isNominalLemmaInOmw(String lemma, String langCode, Connection conn) {
