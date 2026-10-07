@@ -4,13 +4,21 @@ Builds `omw_multilingual.db`, a SQLite extraction of the [Open Multilingual Word
 
 ## Quick Start
 
+Recommended, from the project root:
+
+```bash
+python nnois.py build-db
+```
+
+The helper downloads missing OMW data and installs both the database and attribution into `nnois/src/main/resources/omw/`. Use `python nnois.py` (or `.\nnois.cmd` on Windows) to build a missing database and start the application in one step. An existing checkout can be selected with `--data-dir PATH`; both `wns/` and `omw/` layouts are supported. The steps below describe the standalone builder.
+
 ### 1. Clone OMW Data
 
-Clone the OMW data repository as a sibling of this project's root:
+Clone the OMW data repository inside this project's root. On Windows, use the helper above to avoid incompatible upstream filenames:
 
 ```bash
 cd /path/to/Nnois
-git clone https://github.com/omw/omw-data.git
+git clone https://github.com/omwn/omw-data.git
 ```
 
 Expected layout:
@@ -43,6 +51,7 @@ This generates two files:
 ```bash
 mkdir -p ../nnois/src/main/resources/omw
 cp omw_multilingual.db ../nnois/src/main/resources/omw/
+cp WORDNET_SOURCES.md ../nnois/src/main/resources/omw/
 ```
 
 ## Database Schema
@@ -133,9 +142,12 @@ rm omw_multilingual.db WORDNET_SOURCES.md
 python create_db.py
 
 cp omw_multilingual.db ../nnois/src/main/resources/omw/
+cp WORDNET_SOURCES.md ../nnois/src/main/resources/omw/
 ```
 
 ## Attribution
+
+OMW recommends citing Francis Bond and Ryan Foster (2013), [Linking and Extending an Open Multilingual Wordnet](https://aclanthology.org/P13-1133/), ACL, pages 1352–1362, together with the individual wordnets used. The full citation and BibTeX are in [ATTRIBUTIONS.md](../ATTRIBUTIONS.md#open-multilingual-wordnet-citation).
 
 The builder extracts per-wordnet attribution from each `.tab` file's header and writes it to `WORDNET_SOURCES.md`. This file **must accompany any copy** of `omw_multilingual.db`, as each individual wordnet carries its own license and attribution requirements.
 
