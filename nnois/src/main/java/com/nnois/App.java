@@ -135,18 +135,65 @@ public class App {
         var rows = result.transparencyResults.stream().filter(r -> r.lang != null && !sameLanguage(r.lang, result.detectedLanguage))
                 .sorted(Comparator.comparingDouble((TransparencyResult r) -> r.score).reversed()
                         .thenComparing(r -> r.lang).thenComparing(r -> r.lemma)).toList();
-        if (rows.isEmpty()) { warning("No cross-language matches found. Try another word or language."); return; }
-        printRows(rows.subList(0, Math.min(PAGE_SIZE, rows.size())), result.chosenWord != null);
-        if (interactive && rows.size() > PAGE_SIZE && yes(input, "Show all " + rows.size() + " results? [y/N]"))
-            printRows(rows.subList(PAGE_SIZE, rows.size()), result.chosenWord != null);
-        if (interactive && result.chosenWord == null && !result.nominalLanguageTransparencies.isEmpty()
+        if (result.chosenWord != null && result.chosenSense != null) {
+            System.out.println("  " + style("Recognized sense", "1;96") + " | OMW "
+                    + result.chosenSense.offset + "-" + result.chosenSense.pos);
+            System.out.println("  " + style(result.chosenWord, "1;95") + " — " + result.chosenSense.gloss + "\n");
+        }
+        if (rows.isEmpty()) warning("No cross-language matches found. Try another word or language.");
+        else {
+            printRows(rows.subList(0, Math.min(PAGE_SIZE, rows.size())), result.chosenWord != null);
+            if (interactive && rows.size() > PAGE_SIZE && yes(input, "Show all " + rows.size() + " results? [y/N]"))
+                printRows(rows.subList(PAGE_SIZE, rows.size()), result.chosenWord != null);
+        }
+        if (interactive && result.chosenWord == null
+                && (!result.nominalLanguageTransparencies.isEmpty() || !result.nominalSenseComparisons.isEmpty())
                 && yes(input, "Show word-by-word details? [y/N]")) {
             title("Word-by-word details");
-            String current = "";
-            for (var detail : result.nominalLanguageTransparencies) {
-                if (!detail.nominalUnit.equals(current)) { current = detail.nominalUnit; System.out.println("\n  " + style(current, "1;95")); }
-                System.out.printf("  %s %s %s%n", languageCell(detail.language), style(String.format("%-28s", clip(detail.lemma, 28)), "97"),
-                        style(String.format(Locale.ROOT, "%.2f", detail.score), TerminalColors.scoreColor(detail.score)));
+            if (!result.nominalSenseComparisons.isEmpty()) {
+                printNominalSenses(result.nominalSenseComparisons, result.detectedLanguage);
+            } else {
+                String current = "";
+                for (var detail : result.nominalLanguageTransparencies) {
+                    if (!detail.nominalUnit.equals(current)) { current = detail.nominalUnit; System.out.println("\n  " + style(current, "1;95")); }
+                    System.out.printf("  %s %s %s%n", languageCell(detail.language), style(String.format("%-28s", clip(detail.lemma, 28)), "97"),
+                            style(String.format(Locale.ROOT, "%.2f", detail.score), TerminalColors.scoreColor(detail.score)));
+                }
+            }
+        }
+    }
+    private record SenseWords(AutoTuningMultilingualPipeline.NominalSenseComparison sense,
+            List<TransparencyResult> words) { }
+    private static void printNominalSenses(List<AutoTuningMultilingualPipeline.NominalSenseComparison> comparisons,
+            String sourceLanguage) {
+        Map<Integer, Map<String, List<SenseWords>>> units = new TreeMap<>();
+        for (var sense : comparisons) {
+            Map<String, List<TransparencyResult>> translations = new TreeMap<>();
+            for (var row : sense.translations()) {
+                if (row.lang != null && !sameLanguage(row.lang, sourceLanguage))
+                    translations.computeIfAbsent(LanguageIdentification.normalizeCode(row.lang), key -> new ArrayList<>()).add(row);
+            }
+            for (var entry : translations.entrySet()) {
+                units.computeIfAbsent(sense.begin(), key -> new TreeMap<>())
+                        .computeIfAbsent(entry.getKey(), key -> new ArrayList<>()).add(new SenseWords(sense, entry.getValue()));
+            }
+        }
+        System.out.println("  Recognized senses first; applicability measures context, similarity measures spelling.");
+        for (var languages : units.values()) {
+            System.out.println("\n  " + style(languages.values().iterator().next().get(0).sense().nominalUnit(), "1;95"));
+            for (var entry : languages.entrySet()) {
+                System.out.println("\n  " + languageCell(entry.getKey()));
+                entry.getValue().sort(Comparator.comparing((SenseWords row) -> row.sense().selected()).reversed()
+                        .thenComparing(Comparator.comparingDouble((SenseWords row) -> row.sense().applicabilityScore()).reversed())
+                        .thenComparing(row -> row.sense().synsetOffset()).thenComparing(row -> row.sense().synsetPos()));
+                for (var row : entry.getValue()) {
+                    var sense = row.sense();
+                    System.out.printf(Locale.ROOT, "    %s | OMW %s-%s | applicability %.2f%n",
+                            style(sense.selected() ? "Recognized sense" : "Candidate sense", sense.selected() ? "1;96" : "90"),
+                            sense.synsetOffset(), sense.synsetPos(), sense.applicabilityScore());
+                    System.out.println("    " + sense.gloss());
+                    for (var word : row.words()) System.out.printf(Locale.ROOT, "      %-28s similarity %.2f%n", word.lemma, word.score);
+                }
             }
         }
     }
@@ -184,7 +231,6 @@ public class App {
             case "deu" -> "93"; case "spa" -> "91"; case "por" -> "95";
             case "nld" -> "36"; default -> "97";
         };
-        // Pad before styling so escape codes do not disturb table alignment.
         return style(String.format("%-21s", clip(LanguageIdentification.label(code), 21)), color);
     }
     private static boolean sameLanguage(String a, String b) { return LanguageIdentification.normalizeCode(a).equals(LanguageIdentification.normalizeCode(b)); }
