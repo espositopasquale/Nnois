@@ -1,218 +1,115 @@
 package com.nnois.nlp;
 
+import com.nnois.nlp.wsd.*;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.*;
 
-public class NativeOmwDisambiguator {
-
+public final class NativeOmwDisambiguator implements AutoCloseable {
     private final Connection conn;
-    private final OmwSenseModel senseModel;
-    private boolean modelUnavailable;
+    private final WsdSelection selection;
+    private OmwSenseModel senseModel;
+    private WordNetRepository wordnet;
+    private boolean closed;
 
-    public NativeOmwDisambiguator(Connection conn) {
-        this(conn, OllamaSenseModel.configured());
+    public NativeOmwDisambiguator(Connection conn) { this(conn, null, WsdSelection.configured()); }
+    public NativeOmwDisambiguator(Connection conn, OmwSenseModel model) { this(conn, model, WsdSelection.configured()); }
+    public NativeOmwDisambiguator(Connection conn, OmwSenseModel model, WsdSelection selection) {
+        this.conn = Objects.requireNonNull(conn, "conn");
+        this.senseModel = model;
+        this.selection = Objects.requireNonNull(selection, "selection");
     }
 
-    public NativeOmwDisambiguator(Connection conn, OmwSenseModel senseModel) {
-        this.conn = conn;
-        this.senseModel = senseModel;
-    }
-
-    public static class CandidateSynset {
-
+    public static final class CandidateSynset {
         public final String offset;
         public final String pos;
         public final String gloss;
         public final String matchedLemma;
-
         public CandidateSynset(String offset, String pos, String gloss, String matchedLemma) {
-            this.offset = offset;
-            this.pos = pos;
-            this.gloss = gloss;
-            this.matchedLemma = matchedLemma;
+            this.offset = offset; this.pos = pos; this.gloss = gloss; this.matchedLemma = matchedLemma;
         }
     }
 
-    public CandidateSynset disambiguateNative(String sourceLemma, String langCode, List<String> contextLemmas, Set<String> stopwords) throws SQLException {
-        return disambiguateNative(sourceLemma, langCode, contextLemmas, stopwords, null);
+    public record ScoredSense(CandidateSynset candidate, double applicabilityScore) { }
+    public record Result(String status, CandidateSynset selected, List<ScoredSense> candidates) {
+        public Result { candidates = List.copyOf(candidates); }
     }
 
-    public CandidateSynset disambiguateNative(String sourceLemma,
-            String langCode,
-            List<String> contextLemmas,
-            Set<String> stopwords,
-            String preferredPos) throws SQLException {
+    public CandidateSynset disambiguateNative(String lemma, String language, OccurrenceContext context,
+            Set<String> stopwords, String preferredPos) throws SQLException {
+        return analyze(lemma, language, context, stopwords, preferredPos).selected();
+    }
 
-        if (sourceLemma == null || sourceLemma.isBlank() || stopwords.contains(sourceLemma.toLowerCase().trim())) {
-            return null;
+    public Result analyze(String lemma, String language, OccurrenceContext context,
+            Set<String> stopwords, String preferredPos) throws SQLException {
+        if (closed) throw new IllegalStateException("WSD disambiguator is closed");
+        WsdSelection.requireEnglish(language);
+        if (lemma == null || lemma.isBlank()
+                || (stopwords != null && stopwords.contains(lemma.strip().toLowerCase(Locale.ROOT)))) {
+            return new Result("unlinked", null, List.of());
         }
-
-        List<CandidateSynset> candidates = fetchCandidateSynsets(sourceLemma, langCode);
-
-        if (candidates.isEmpty()) {
-            return null;
+        Objects.requireNonNull(context, "Original context and target offsets are required");
+        List<CandidateSynset> candidates = candidates(lemma, preferredPos);
+        if (candidates.isEmpty()) return new Result("unlinked", null, List.of());
+        List<CandidateSynset> defined = candidates.stream().filter(c -> !c.gloss.isBlank()).toList();
+        if (defined.isEmpty()) return new Result("missing-english-definition", null, List.of());
+        try {
+            if (senseModel == null) senseModel = new GradedWsdModel(GradedWsdModel.configuredDirectory());
+            double[] scores = senseModel.score(context, defined.stream().map(c -> c.gloss).toList());
+            if (scores.length != defined.size()) throw new IllegalArgumentException("Invalid WSD score count");
+            int selected = selection.select(scores);
+            List<ScoredSense> ranked = new ArrayList<>();
+            for (int i = 0; i < scores.length; i++) ranked.add(new ScoredSense(defined.get(i), scores[i]));
+            ranked.sort(Comparator.comparingDouble(ScoredSense::applicabilityScore).reversed()
+                    .thenComparing(s -> s.candidate.offset).thenComparing(s -> s.candidate.pos));
+            if (defined.size() != candidates.size()) return new Result("missing-english-definition", null, ranked);
+            return new Result(selected < 0 ? "ambiguous" : "resolved", selected < 0 ? null : defined.get(selected), ranked);
+        } catch (Exception error) {
+            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new IllegalStateException("graded-wsd failed for '" + lemma + "': " + error.getMessage(), error);
         }
+    }
 
-        String normalizedPreferredPos = normalizePos(preferredPos);
-        if (normalizedPreferredPos != null) {
-            List<CandidateSynset> filtered = candidates.stream()
-                    .filter(candidate -> normalizedPreferredPos.equalsIgnoreCase(candidate.pos))
-                    .collect(Collectors.toList());
-            if (!filtered.isEmpty()) {
-                candidates = filtered;
+    private List<CandidateSynset> candidates(String lemma, String preferredPos) throws SQLException {
+        if (conn.isClosed()) throw new SQLException("OMW connection is closed");
+        String pos = preferredPos == null || preferredPos.isBlank() ? null : preferredPos.strip().toLowerCase(Locale.ROOT);
+        if ("s".equals(pos)) pos = "a";
+        if (pos != null && !Set.of("n", "v", "a", "r").contains(pos)) {
+            throw new IllegalArgumentException("Unsupported WordNet POS: " + preferredPos);
+        }
+        try {
+            if (wordnet == null) {
+                var dictionary = WordNetRepository.configured();
+                if (!dictionary.version().equals("3.0")) {
+                    dictionary.close();
+                    throw new IllegalArgumentException("OMW offset lookup requires Princeton WordNet 3.0");
+                }
+                wordnet = dictionary;
             }
-        }
-
-        String normalizedSource = sourceLemma == null ? "" : sourceLemma.trim();
-        if (!normalizedSource.isEmpty() && normalizedSource.equals(normalizedSource.toLowerCase())) {
-            List<CandidateSynset> commonNounLike = candidates.stream()
-                    .filter(candidate -> candidate.matchedLemma != null)
-                    .filter(candidate -> candidate.matchedLemma.equals(candidate.matchedLemma.toLowerCase()))
-                    .collect(Collectors.toList());
-            if (!commonNounLike.isEmpty()) {
-                candidates = commonNounLike;
-            }
-        }
-
-        String sourceLemmaNormalized = sourceLemma == null ? "" : sourceLemma.toLowerCase();
-
-        Set<String> contextSet = contextLemmas.stream()
-                .map(String::toLowerCase)
-                .filter(w -> !w.equals(sourceLemmaNormalized))
-                .filter(w -> w.length() > 2)
-                .filter(w -> !stopwords.contains(w))
-                .collect(Collectors.toSet());
-
-        CandidateSynset bestSynset = chooseDeterministicFallback(candidates);
-        if (senseModel != null && !modelUnavailable) {
-            List<CandidateSynset> defined = candidates.stream()
-                    .filter(c -> c.gloss != null && !c.gloss.isBlank()).toList();
-            List<String> contentContext = contextLemmas.stream()
-                    .filter(Stopwords::isWord).filter(w -> !stopwords.contains(w.toLowerCase())).toList();
-            if (defined.size() > 1 && !contentContext.isEmpty()) {
-                try {
-                    double[] scores = senseModel.score(String.join(" ", contentContext), defined.stream()
-                            .map(c -> Arrays.stream(c.gloss.split("(?U)\\W+"))
-                                    .filter(Stopwords::isWord)
-                                    .filter(w -> !stopwords.contains(w.toLowerCase()))
-                                    .collect(Collectors.joining(" "))).toList());
-                    if (scores.length != defined.size()) throw new IllegalArgumentException("Invalid sense score count");
-                    double maxScore = -Double.MAX_VALUE;
-                    for (int i = 0; i < scores.length; i++) {
-                        if (!Double.isFinite(scores[i])) throw new IllegalArgumentException("Invalid sense score");
-                        if (scores[i] > maxScore) { maxScore = scores[i]; bestSynset = defined.get(i); }
-                    }
-                    return bestSynset;
-                } catch (Exception error) {
-                    if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-                    modelUnavailable = true;
-                    System.err.println("[WSD] Embedding model unavailable; using lexical overlap: " + error.getMessage());
+            var result = new LinkedHashMap<String, CandidateSynset>();
+            List<String> tags = pos == null ? List.of("NN", "VB", "JJ", "RB") : List.of(switch (pos) {
+                case "n" -> "NN"; case "v" -> "VB"; case "a" -> "JJ"; default -> "RB";
+            });
+            for (String tag : tags) {
+                for (var sense : wordnet.candidates(lemma, tag)) {
+                    var synset = sense.synset();
+                    String offset = String.format(Locale.ROOT, "%08d", synset.getOffset());
+                    String candidatePos = String.valueOf(synset.getPOS().getTag());
+                    result.putIfAbsent(offset + ":" + candidatePos,
+                            new CandidateSynset(offset, candidatePos, synset.getGloss(), lemma));
                 }
             }
+            return List.copyOf(result.values());
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("Cannot load English WordNet: " + error.getMessage(), error);
         }
-        int maxOverlap = 0;
-
-        for (CandidateSynset candidate : candidates) {
-            if (candidate.gloss == null || candidate.gloss.isBlank()) {
-                continue;
-            }
-
-            Set<String> glossWords = Arrays.stream(candidate.gloss.toLowerCase().split("(?U)\\W+"))
-                    .filter(w -> w.length() > 2)
-                    .filter(w -> !stopwords.contains(w))
-                    .collect(Collectors.toSet());
-
-            Set<String> overlap = new HashSet<>(glossWords);
-            overlap.retainAll(contextSet);
-
-            int score = overlap.size();
-            if (score > maxOverlap) {
-                maxOverlap = score;
-                bestSynset = candidate;
-            }
-        }
-
-        return bestSynset;
     }
 
-    private String normalizePos(String pos) {
-        if (pos == null || pos.isBlank()) {
-            return null;
-        }
-
-        String lower = pos.toLowerCase();
-        if (lower.equals("n") || lower.equals("v") || lower.equals("a") || lower.equals("s") || lower.equals("r")) {
-            return lower.equals("s") ? "a" : lower;
-        }
-        return null;
-    }
-
-    private CandidateSynset chooseDeterministicFallback(List<CandidateSynset> candidates) {
-        Comparator<CandidateSynset> byPreference = Comparator
-                .comparingInt((CandidateSynset c) -> posPreference(c.pos))
-                .thenComparing(c -> c.offset == null ? "" : c.offset)
-                .thenComparing(c -> c.pos == null ? "" : c.pos);
-
-        return candidates.stream().min(byPreference).orElse(candidates.get(0));
-    }
-
-    private int posPreference(String pos) {
-        if (pos == null) {
-            return 99;
-        }
-
-        return switch (pos.toLowerCase()) {
-            case "n" ->
-                0;
-            case "v" ->
-                1;
-            case "a", "s" ->
-                2;
-            case "r" ->
-                3;
-            default ->
-                99;
-        };
-    }
-
-    private List<CandidateSynset> fetchCandidateSynsets(String lemma, String langCode) throws SQLException {
-        List<CandidateSynset> candidates = new ArrayList<>();
-
-        String sql = "SELECT DISTINCT l.synset_offset, l.pos, l.lemma, "
-                + "COALESCE(d_local.def, d_en.def, d_eng.def, '') AS gloss "
-                + "FROM synset_lemmas l "
-                + "LEFT JOIN synset_def d_local ON l.synset_offset = d_local.synset_offset "
-                + "AND l.pos = d_local.pos AND d_local.lang = l.lang "
-                + "LEFT JOIN synset_def d_en ON l.synset_offset = d_en.synset_offset "
-                + "AND l.pos = d_en.pos AND d_en.lang = 'en' "
-                + "LEFT JOIN synset_def d_eng ON l.synset_offset = d_eng.synset_offset "
-                + "AND l.pos = d_eng.pos AND d_eng.lang = 'eng' "
-                + "WHERE LOWER(l.lemma) = ? AND l.lang = ? ORDER BY l.synset_offset, l.pos, gloss";
-
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, lemma.toLowerCase().trim());
-            pstmt.setString(2, langCode.toLowerCase().trim());
-
-            try (ResultSet rs = pstmt.executeQuery()) {
-                while (rs.next()) {
-                    String offset = rs.getString("synset_offset");
-                    String pos = rs.getString("pos");
-                    String def = rs.getString("gloss");
-                    String matchedLemma = rs.getString("lemma");
-
-                    candidates.add(new CandidateSynset(offset, pos, def != null ? def : "", matchedLemma));
-                }
-            }
-        }
-        return candidates;
+    @Override
+    public void close() throws Exception {
+        if (closed) return;
+        closed = true;
+        try { if (senseModel != null) senseModel.close(); }
+        finally { if (wordnet != null) wordnet.close(); }
     }
 }

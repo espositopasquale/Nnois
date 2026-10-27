@@ -1,9 +1,12 @@
 package com.nnois.nlp;
 
 import java.util.List;
+import com.nnois.nlp.wsd.OccurrenceContext;
 
-/** Scores only supplied OMW candidates, preserving their offset and POS. */
 @FunctionalInterface
-public interface OmwSenseModel {
-    double[] score(String context, List<String> definitions) throws Exception;
+public interface OmwSenseModel extends AutoCloseable {
+    double[] score(OccurrenceContext context, List<String> definitions) throws Exception;
+
+    @Override
+    default void close() throws Exception { }
 }

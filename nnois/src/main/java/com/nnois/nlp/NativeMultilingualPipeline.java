@@ -1,5 +1,8 @@
 package com.nnois.nlp;
 
+import com.nnois.nlp.wsd.OccurrenceContext;
+import com.nnois.nlp.wsd.WsdSelection;
+
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -57,10 +60,10 @@ public class NativeMultilingualPipeline implements AutoCloseable {
 
     public List<TransparencyResult> analyzeNativeAndCalculateTransparency(String rawSentence, String targetWord, String sourceLang) throws Exception {
 
-        List<String> tokens = sourceNlp.tokenize(rawSentence);
-        List<String> lemmatizedContext = sourceNlp.lemmatizeTokens(tokens);
-
-        var bestSynset = disambiguator.disambiguateNative(targetWord, sourceLang, lemmatizedContext, stopWords);
+        WsdSelection.requireEnglish(sourceLang);
+        var target = sourceNlp.findTarget(rawSentence, targetWord);
+        var bestSynset = disambiguator.disambiguateNative(target.lemma(), sourceLang,
+                OccurrenceContext.fromDocument(rawSentence, target.begin(), target.end()), stopWords, target.pos());
 
         if (bestSynset == null) {
             System.err.println("No matching senses found in OMW for '" + targetWord + "' in language '" + sourceLang + "'.");
@@ -146,8 +149,7 @@ public class NativeMultilingualPipeline implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        if (conn != null && !conn.isClosed()) {
-            conn.close();
-        }
+        try { disambiguator.close(); }
+        finally { if (conn != null && !conn.isClosed()) conn.close(); }
     }
 }

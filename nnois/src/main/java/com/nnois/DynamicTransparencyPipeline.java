@@ -10,23 +10,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import com.nnois.utils.ResourceLoaderHelper;
+import com.nnois.disambiguator.JwiGradedWsdDisambiguator;
 
 import edu.mit.jwi.Dictionary;
 import edu.mit.jwi.IDictionary;
-import edu.mit.jwi.item.IIndexWord;
 import edu.mit.jwi.item.ISynset;
-import edu.mit.jwi.item.ISynsetID;
-import edu.mit.jwi.item.IWord;
-import edu.mit.jwi.item.IWordID;
 import edu.mit.jwi.item.POS;
-import edu.mit.jwi.item.Pointer;
 import edu.mit.jwi.morph.IStemmer;
 import edu.mit.jwi.morph.WordnetStemmer;
 
@@ -34,7 +26,7 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
 
     private final IDictionary dict;
     private final IStemmer stemmer;
-    private final Set<String> stopWords;
+    private final JwiGradedWsdDisambiguator disambiguator;
     private final Connection sqliteConn;
     private File tempDbFile;
 
@@ -81,17 +73,17 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
         this.stemmer = new WordnetStemmer(this.dict);
 
         ResourceLoaderHelper resourceLoader = new ResourceLoaderHelper();
-        this.stopWords = resourceLoader.loadStopWordsFromStream(stopwordsResourcePath);
+        this.disambiguator = new JwiGradedWsdDisambiguator(dict);
         this.sqliteConn = resourceLoader.loadSqliteFromResources(sqliteResourcePath);
     }
 
-    public DynamicResult analyzeAndCalculateTransparency(String rawWord, POS pos, List<String> sentenceTokens) throws SQLException {
+    public DynamicResult analyzeAndCalculateTransparency(String rawWord, POS pos, List<String> sentenceTokens) throws Exception {
         String targetLemma = getLemma(rawWord, pos);
         if (targetLemma == null) {
             return null;
         }
 
-        ISynset bestSynset = disambiguateSynset(targetLemma, pos, sentenceTokens);
+        ISynset bestSynset = disambiguator.disambiguate(rawWord, pos, sentenceTokens);
         if (bestSynset == null) {
             return null;
         }
@@ -99,57 +91,6 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
         List<LangTransparency> scores = calculateTransparencyForSynset(targetLemma, bestSynset);
 
         return new DynamicResult(targetLemma, bestSynset, scores);
-    }
-
-    private ISynset disambiguateSynset(String targetLemma, POS pos, List<String> sentenceTokens) {
-        IIndexWord idxWord = dict.getIndexWord(targetLemma, pos);
-        if (idxWord == null || idxWord.getWordIDs().isEmpty()) {
-            return null;
-        }
-
-        Set<String> context = sentenceTokens.stream()
-                .map(String::toLowerCase)
-                .map(t -> getLemma(t, null))
-                .filter(Objects::nonNull)
-                .filter(w -> !w.equals(targetLemma))
-                .filter(w -> w.length() > 2)
-                .filter(w -> !stopWords.contains(w))
-                .collect(Collectors.toSet());
-
-        ISynset bestSynset = null;
-        int maxOverlapScore = -1;
-
-        for (IWordID wordID : idxWord.getWordIDs()) {
-            IWord iWord = dict.getWord(wordID);
-            ISynset synset = iWord.getSynset();
-
-            StringBuilder extendedGloss = new StringBuilder(synset.getGloss());
-
-            for (ISynsetID hypernymId : synset.getRelatedSynsets(Pointer.HYPERNYM)) {
-                extendedGloss.append(" ").append(dict.getSynset(hypernymId).getGloss());
-            }
-            for (ISynsetID hyponymId : synset.getRelatedSynsets(Pointer.HYPONYM)) {
-                extendedGloss.append(" ").append(dict.getSynset(hyponymId).getGloss());
-            }
-
-            Set<String> glossWords = Arrays.stream(extendedGloss.toString().toLowerCase().split("\\W+"))
-                    .filter(w -> w.length() > 2)
-                    .filter(w -> !stopWords.contains(w))
-                    .map(w -> getLemma(w, null))
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-
-            Set<String> overlap = new HashSet<>(glossWords);
-            overlap.retainAll(context);
-
-            int score = overlap.size();
-            if (score > maxOverlapScore) {
-                maxOverlapScore = score;
-                bestSynset = synset;
-            }
-        }
-
-        return bestSynset;
     }
 
     private List<LangTransparency> calculateTransparencyForSynset(String sourceLemma, ISynset synset) throws SQLException {
@@ -238,11 +179,10 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        if (dict != null && dict.isOpen()) {
-            dict.close();
-        }
-        if (sqliteConn != null && !sqliteConn.isClosed()) {
-            sqliteConn.close();
+        try { disambiguator.close(); }
+        finally {
+            if (dict != null && dict.isOpen()) dict.close();
+            if (sqliteConn != null && !sqliteConn.isClosed()) sqliteConn.close();
         }
     }
 
@@ -254,6 +194,7 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
             List<String> context1 = Arrays.asList("they", "walked", "along", "the", "river", "bank");
             var result1 = pipeline.analyzeAndCalculateTransparency("bank", POS.NOUN, context1);
 
+            if (result1 == null) { System.out.println("Unresolved sense"); return; }
             System.out.println("Senso individuato: " + result1.selectedSynset.getGloss());
             result1.languageScores.forEach(score -> System.out.println(score));
 
@@ -261,6 +202,7 @@ public class DynamicTransparencyPipeline implements AutoCloseable {
             List<String> context2 = Arrays.asList("he", "deposited", "money", "in", "the", "bank", "account");
             var result2 = pipeline.analyzeAndCalculateTransparency("bank", POS.NOUN, context2);
 
+            if (result2 == null) { System.out.println("Unresolved sense"); return; }
             System.out.println("Senso individuato: " + result2.selectedSynset.getGloss());
             result2.languageScores.forEach(score -> System.out.println(score));
         }
