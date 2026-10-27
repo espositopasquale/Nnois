@@ -3,6 +3,7 @@ package com.nnois.nlp;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
+import com.nnois.nlp.wsd.OccurrenceContext;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,6 +13,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public final class OllamaSenseModel implements OmwSenseModel {
 
@@ -35,6 +37,10 @@ public final class OllamaSenseModel implements OmwSenseModel {
     }
 
     @Override
+    public double[] score(OccurrenceContext context, List<String> definitions) throws Exception {
+        return score(Objects.requireNonNull(context, "context").text(), definitions);
+    }
+
     public double[] score(String context, List<String> definitions) throws Exception {
         List<String> inputs = new ArrayList<>();
         inputs.add(context);
