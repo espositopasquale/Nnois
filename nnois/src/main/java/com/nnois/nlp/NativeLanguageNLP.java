@@ -15,6 +15,42 @@ import opennlp.tools.tokenize.TokenizerModel;
 
 public class NativeLanguageNLP {
 
+    public record Target(String lemma, String pos, int begin, int end) { }
+
+    public Target findTarget(String text, String target) {
+        if (text == null || target == null || target.isBlank()) {
+            throw new IllegalArgumentException("Original text and target word are required");
+        }
+        var spans = tokenizer != null ? tokenizer.tokenizePos(text) : whitespaceSpans(text);
+        List<String> tokens = java.util.Arrays.stream(spans)
+                .map(span -> text.substring(span.getStart(), span.getEnd())).toList();
+        List<String> lemmas = lemmatizeTokens(tokens);
+        List<TaggedToken> tagged = tagTokens(tokens);
+        String normalized = target.strip().replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
+        int length = normalized.split("\\s+").length;
+        for (boolean surface : new boolean[] { true, false }) {
+            Target found = null;
+            for (int i = 0; i + length <= tokens.size(); i++) {
+                String phrase = String.join(" ", (surface ? tokens : lemmas).subList(i, i + length))
+                        .toLowerCase(java.util.Locale.ROOT);
+                if (!phrase.equals(normalized)) continue;
+                if (found != null) throw new IllegalArgumentException("Target occurs more than once; supply its character offsets");
+                found = new Target(String.join("_", lemmas.subList(i, i + length)),
+                        length > 1 ? "n" : mapToOmwPos(tagged.get(i).posTag),
+                        spans[i].getStart(), spans[i + length - 1].getEnd());
+            }
+            if (found != null) return found;
+        }
+        throw new IllegalArgumentException("Target is not present in the original text: " + target);
+    }
+
+    static opennlp.tools.util.Span[] whitespaceSpans(String text) {
+        List<opennlp.tools.util.Span> spans = new ArrayList<>();
+        var matcher = java.util.regex.Pattern.compile("\\S+").matcher(text);
+        while (matcher.find()) spans.add(new opennlp.tools.util.Span(matcher.start(), matcher.end()));
+        return spans.toArray(opennlp.tools.util.Span[]::new);
+    }
+
     public static class TaggedToken {
 
         public final String token;

@@ -28,11 +28,19 @@ public class OpenNLPMWEExtractor {
         public final String lemma;
         public final String unitType;
         public final double score;
+        public final int begin;
+        public final int end;
 
         public NominalUnitScore(String lemma, String unitType, double score) {
+            this(lemma, unitType, score, -1, -1);
+        }
+
+        public NominalUnitScore(String lemma, String unitType, double score, int begin, int end) {
             this.lemma = lemma;
             this.unitType = unitType;
             this.score = score;
+            this.begin = begin;
+            this.end = end;
         }
     }
 
@@ -166,7 +174,9 @@ public class OpenNLPMWEExtractor {
             return new NominalAggregateResult(0.0, 0, units);
         }
 
-        String[] tokens = (tokenizer != null) ? tokenizer.tokenize(text) : text.trim().split("\\s+");
+        Span[] tokenSpans = tokenizer != null ? tokenizer.tokenizePos(text) : NativeLanguageNLP.whitespaceSpans(text);
+        String[] tokens = java.util.Arrays.stream(tokenSpans)
+                .map(span -> text.substring(span.getStart(), span.getEnd())).toArray(String[]::new);
         String[] posTags = (posTagger != null) ? posTagger.tag(tokens) : new String[tokens.length];
         String[] lemmas = tokens.clone();
         if (posTagger != null) {
@@ -211,7 +221,8 @@ public class OpenNLPMWEExtractor {
             String candidateMwe = mweBuilder.toString();
             if (allEligible && isMweInOmw(candidateMwe, langCode, sqliteConn)) {
                 consideredWords += span.length();
-                units.add(new NominalUnitScore(candidateMwe, "NOMINAL_MWE", 1.0));
+                units.add(new NominalUnitScore(candidateMwe, "NOMINAL_MWE", 1.0,
+                        tokenSpans[span.getStart()].getStart(), tokenSpans[span.getEnd() - 1].getEnd()));
                 for (int i = span.getStart(); i < span.getEnd(); i++) {
                     consumed[i] = true;
                 }
@@ -225,7 +236,8 @@ public class OpenNLPMWEExtractor {
 
             POS wordNetPos = PosMapper.mapToWordNetPOS(posTags[i]);
             if (wordNetPos == POS.NOUN || isNominalLemmaInOmw(lemmas[i], langCode, sqliteConn)) {
-                units.add(new NominalUnitScore(lemmas[i], "NOMINAL_TOKEN", 1.0));
+                units.add(new NominalUnitScore(lemmas[i], "NOMINAL_TOKEN", 1.0,
+                        tokenSpans[i].getStart(), tokenSpans[i].getEnd()));
                 consideredWords++;
             }
         }
