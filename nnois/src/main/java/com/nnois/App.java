@@ -15,7 +15,7 @@ public class App {
     }
     private static final class EndSession extends RuntimeException { }
     static void runSession(AnalysisService service, Scanner input) {
-        System.out.println(style("Compare words across languages using shared OMW senses.", "1;97"));
+        System.out.println(style("Compare words across languages through shared meanings.", "1;97"));
         System.out.println(style("Enter text. Commands: demo, help, paste, exit. Use back to cancel a step.\n", "90"));
         while (true) {
             String text = read(input, "Text");
