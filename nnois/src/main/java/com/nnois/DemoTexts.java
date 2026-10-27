@@ -2,7 +2,6 @@ package com.nnois;
 
 import java.util.List;
 
-/** Parallel passages on civic life, nature, learning, and energy. */
 public final class DemoTexts {
     private DemoTexts() { }
     public record Sample(String language, String target, String text) { }

@@ -6,7 +6,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Built-in function words; optional classpath lists extend these defaults. */
 public final class Stopwords {
     private Stopwords() { }
     private static final Map<String, String> WORDS = Map.of(

@@ -1,15 +1,24 @@
 package com.nnois;
 
-import com.nnois.nlp.LeskNlp;
-import com.nnois.disambiguator.JwiLeskDisambiguator;
-import edu.mit.jwi.item.POS;
-import org.junit.Test;
-import org.junit.Assume;
 import java.io.IOException;
 import java.util.List;
-import static org.junit.Assert.*;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import org.junit.Assume;
+import org.junit.Test;
+
+import com.nnois.disambiguator.JwiLeskDisambiguator;
+import com.nnois.nlp.LeskNlp;
+
+import edu.mit.jwi.item.POS;
 
 public class LeskNlpTest {
+
     @Test
     public void modelsSelectAndLemmatizeContentWords() throws Exception {
         LeskNlp nlp = new LeskNlp();

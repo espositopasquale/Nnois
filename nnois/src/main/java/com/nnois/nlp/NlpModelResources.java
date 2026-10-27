@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
-/** Resolve model names published by the bundled OpenNLP model jars. */
 final class NlpModelResources {
     private NlpModelResources() { }
     static InputStream open(String requested, String type) throws IOException {

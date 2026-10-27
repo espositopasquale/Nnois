@@ -1,6 +1,5 @@
 package com.nnois.utils;
 
-/** Shared terminal color policy for the banner and CLI reports. */
 public final class TerminalColors {
     private TerminalColors() { }
     public static boolean enabled() {

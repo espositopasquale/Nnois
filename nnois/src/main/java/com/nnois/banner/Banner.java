@@ -2,6 +2,7 @@ package com.nnois.banner;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import com.nnois.utils.TerminalColors;
 
 public class Banner {

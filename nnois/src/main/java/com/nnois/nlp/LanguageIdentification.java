@@ -10,7 +10,6 @@ import java.util.Map;
 import opennlp.tools.langdetect.LanguageDetectorME;
 import opennlp.tools.langdetect.LanguageDetectorModel;
 
-/** Shared language detection with alternatives and explicit uncertainty. */
 public final class LanguageIdentification {
     private static final Map<String, String> NAMES = Map.of("eng", "English", "ita", "Italian",
             "fra", "French", "deu", "German", "spa", "Spanish", "por", "Portuguese", "nld", "Dutch");
@@ -41,8 +40,6 @@ public final class LanguageIdentification {
         Candidate first = candidates.get(0);
         double runnerUp = candidates.size() < 2 ? 0 : candidates.get(1).confidence();
         boolean closeCandidates = runnerUp > 0 && first.confidence() / runnerUp < 1.5;
-        // Compare substantial sentences instead of treating one confident
-        // prediction as evidence that every part of a passage is monolingual.
         java.util.Set<String> sentenceLanguages = new java.util.HashSet<>();
         Arrays.stream(cleaned.split("(?<=[.!?])\\s+")).limit(16).forEach(sentence -> {
             long sentenceWords = Arrays.stream(sentence.split("\\s+")).filter(Stopwords::isWord).count();

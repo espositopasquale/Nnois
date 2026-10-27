@@ -14,7 +14,6 @@ import opennlp.tools.postag.POSTaggerME;
 import opennlp.tools.tokenize.TokenizerME;
 import opennlp.tools.tokenize.TokenizerModel;
 
-/** Model-based English content-word analysis for WordNet contexts and glosses. */
 public final class LeskNlp {
     private final TokenizerME tokenizer;
     private final POSTaggerME tagger;
@@ -28,7 +27,6 @@ public final class LeskNlp {
                 "opennlp-en-ud-ewt-lemmas-1.3-2.5.4.bin");
     }
 
-    /** Resource names can point to replacement models on the classpath. */
     public LeskNlp(String tokenizerResource, String posResource, String lemmaResource) throws IOException {
         try (InputStream tokens = open(tokenizerResource);
                 InputStream pos = open(posResource);
