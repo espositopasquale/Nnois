@@ -188,9 +188,9 @@ public class App {
                         .thenComparing(row -> row.sense().synsetOffset()).thenComparing(row -> row.sense().synsetPos()));
                 for (var row : entry.getValue()) {
                     var sense = row.sense();
-                    System.out.printf(Locale.ROOT, "    %s | OMW %s-%s | applicability %.2f%n",
+                    System.out.printf(Locale.ROOT, "    %s | applicability %.2f%n",
                             style(sense.selected() ? "Recognized sense" : "Candidate sense", sense.selected() ? "1;96" : "90"),
-                            sense.synsetOffset(), sense.synsetPos(), sense.applicabilityScore());
+                            sense.applicabilityScore());
                     System.out.println("    " + sense.gloss());
                     for (var word : row.words()) System.out.printf(Locale.ROOT, "      %-28s similarity %.2f%n", word.lemma, word.score);
                 }
