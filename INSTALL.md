@@ -1,10 +1,10 @@
-# Installing and running Nnois
+# Installing and running Nnois 0.2.0
 
 ## Requirements
 
 - Java JDK 21 (including `javac`)
 - Maven 3.8+
-- Python 3.9+
+- Python 3.9+ for the setup helper and OMW database builder
 - Git, when downloading OMW data
 
 Make the tools available on `PATH`. Check with `java -version`, `javac -version`, `mvn -version`, `python --version`, and `git --version`. If Maven selects another Java version, set `JAVA_HOME` to your JDK 21 directory. No Python packages need to be installed.
@@ -27,7 +27,7 @@ Use `python3` on Linux/macOS if needed. The Windows launcher selects `py -3` whe
 
 This single command downloads missing OMW data, builds and validates the database when it or its attribution file is missing, compiles Java, and opens the interactive CLI. On later runs, it reuses the database. Maven compiles the application without running the test suite during normal startup. Initial downloads require internet access.
 
-At `Input text`, enter a word or sentence, then choose automatic language detection or a language code such as `eng` or `ita`. For a sentence, choose a target word or aggregate nominal analysis. Enter `exit` or `quit` at the text prompt to finish.
+At `Text >`, enter a word or sentence, then accept automatic language detection or choose a language such as `en` or `it`. Select whole-text comparison, one word in context, word alternatives, or automatic text modifier. Enter `exit` or `quit` at the text prompt to finish.
 
 ## Linux and macOS
 
@@ -53,26 +53,45 @@ Initial downloads
 require internet access; no additional Python packages are needed. If Maven
 uses a different JDK, set `JAVA_HOME` to your JDK 21 directory.
 
-For the web interface, also install Node.js 22+ and the pnpm version declared
-in `nnois_web/nnois/package.json`. Start the API from the repository root:
+## Contextual models
 
-```sh
-sh ./nnois.sh build-db
-mvn install -DskipTests
-java -Dfile.encoding=UTF-8 -jar api/target/nnois-api-0.1.0.war
+Release 0.2.0 performs word-sense disambiguation locally in the Java process. Download or export the models separately; their binaries are excluded from Git and release archives. From the repository root, use this layout:
+
+```text
+models/
+|-- graded-wsd/
+|   |-- model.onnx
+|   |-- tokenizer.json
+|   `-- config.json
+`-- multilingual-e5-small/
+    |-- model.onnx
+    |-- tokenizer.json
+    `-- config.json
 ```
 
-In another terminal, starting from the repository root:
+The English model is [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd). Italian, French, German, Spanish, Portuguese, and Dutch use [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small). If the directories are elsewhere, set them for the current PowerShell session:
 
-```sh
-cd nnois_web/nnois
-pnpm install --frozen-lockfile
-pnpm dev
+```powershell
+$env:NNOIS_WSD_MODEL_DIR = "C:\Models\graded-wsd"
+$env:NNOIS_MULTILINGUAL_WSD_MODEL_DIR = "C:\Models\multilingual-e5-small"
+.\nnois.cmd
 ```
 
-Open http://localhost:3000. Keep the API and frontend terminals running; stop
-each with Ctrl+C. The frontend forwards requests to the Java API on port 8080.
-For production, use `pnpm build` followed by `pnpm start`.
+Both directories must contain `model.onnx`, `tokenizer.json`, and `config.json`. Nnois reports a missing or inconclusive model result instead of substituting from an uncertain sense.
+
+## Optional substitution validator
+
+Candidate generation is deterministic Java logic and requires no generative model. To let modes 3 and 4 validate candidates in their full context, export [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) for ONNX Runtime GenAI into `models/substitution-decoder-onnx`, then install `onnxruntime-genai` in an isolated `.venv-decoder` environment. The exported model directory must contain `genai_config.json`.
+
+Override the defaults when needed:
+
+```powershell
+$env:NNOIS_SUBSTITUTION_MODEL_DIR = "C:\Models\substitution-decoder-onnx"
+$env:NNOIS_SUBSTITUTION_PYTHON = "C:\Environments\nnois-decoder\Scripts\python.exe"
+.\nnois.cmd
+```
+
+The validator receives only replacements already selected from the source-language lexicalizations of the chosen synset. It can mark them `accepted`, `rejected`, or `unverified`; it cannot generate or translate text. Automatic mode does not apply unverified candidates.
 
 ## Rebuild the database
 
@@ -115,5 +134,8 @@ Older `run`, `setup`, and `--fetch-data` commands still work. `setup` explicitly
 | Download fails | Check your network connection and Git/Maven proxy configuration, then rerun. |
 | Database replacement denied | Close programs holding the database open and check write access to the resources directory. |
 | Language detection is unreliable | Use a longer text or choose the source language manually. |
+| `graded-wsd missing` | Put the three English model assets in `models/graded-wsd` or set `NNOIS_WSD_MODEL_DIR`. |
+| `multilingual E5 missing` | Put the three E5 assets in `models/multilingual-e5-small` or set `NNOIS_MULTILINGUAL_WSD_MODEL_DIR`. |
+| Modifier reports that the context checker is unavailable | Check `genai_config.json`, the isolated Python executable, and the `onnxruntime-genai` installation. |
 
 See [database builder documentation](omw-database/README.md) for the schema, [ATTRIBUTIONS.md](ATTRIBUTIONS.md#open-multilingual-wordnet-citation) for OMW citations, or run `python nnois.py --help` for helper options. Developers can run Java tests with `mvn test` inside `nnois/` and helper tests with `python -m unittest discover -s tests -v` at the project root.

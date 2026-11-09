@@ -59,13 +59,24 @@ public class GradedWsdTest {
         }
     }
 
-    @Test public void rejectsNonEnglishAndPropagatesFailures() throws Exception {
-        try (var conn = DriverManager.getConnection("jdbc:sqlite::memory:");
-                var wsd = new NativeOmwDisambiguator(conn, (context, definitions) -> { throw new java.io.IOException("fixture failure"); })) {
-            try { wsd.analyze("banca", "ita", bank, Set.of(), "n"); fail(); }
-            catch (IllegalArgumentException expected) { assertTrue(expected.getMessage().contains("English")); }
+    @Test public void supportsNonEnglishAndPropagatesModelFailures() throws Exception {
+        try (var conn = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            try (var statement = conn.createStatement()) {
+                statement.execute("CREATE TABLE synset_lemmas (synset_offset TEXT, pos TEXT, lang TEXT, lemma TEXT)");
+                statement.execute("CREATE TABLE synset_def (synset_offset TEXT, pos TEXT, lang TEXT, def TEXT)");
+                statement.execute("INSERT INTO synset_lemmas VALUES ('08420278', 'n', 'ita', 'banca')");
+                statement.execute("INSERT INTO synset_def VALUES ('08420278', 'n', 'eng', 'a financial institution')");
+            }
+            try (var wsd = new NativeOmwDisambiguator(conn,
+                    (context, definitions) -> { throw new java.io.IOException("fixture failure"); })) {
+                try { wsd.analyze("banca", "ita", bank, Set.of(), "n"); fail(); }
+                catch (IllegalStateException expected) {
+                    assertTrue(expected.getMessage().contains("multilingual E5"));
+                    assertTrue(expected.getMessage().contains("fixture failure"));
+                }
             try { wsd.analyze("bank", "eng", bank, Set.of(), "n"); fail(); }
             catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("fixture failure")); }
+            }
         }
     }
 

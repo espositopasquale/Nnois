@@ -45,7 +45,19 @@ OMW also requests citation of the individual wordnets used. Retain their source 
 | SQLite and SQLite JDBC | Embedded storage and Java access for lexical data. | [sqlite.org](https://www.sqlite.org/), [Xerial SQLite JDBC](https://github.com/xerial/sqlite-jdbc) |
 | Picocli | Command-line interface support. | [picocli.info](https://picocli.info/) |
 | Logback | Runtime logging. | [logback.qos.ch](https://logback.qos.ch/) |
+| ONNX Runtime | Local Java inference for contextual sense and grammar models. | [onnxruntime.ai](https://onnxruntime.ai/) |
+| DJL Hugging Face tokenizers | Java tokenization for the multilingual E5 model. | [djl.ai](https://djl.ai/) |
 | Maven | Build and dependency management. | [maven.apache.org](https://maven.apache.org/) |
+
+## Models
+
+Model files are not distributed in this repository. Users obtain them separately and remain responsible for complying with their licenses.
+
+| Model | Role in Nnois | Reference |
+| --- | --- | --- |
+| ChangeIsKey/graded-wsd | English contextual WordNet sense scoring. | [Hugging Face](https://huggingface.co/ChangeIsKey/graded-wsd) |
+| intfloat/multilingual-e5-small | Multilingual context-to-gloss scoring for OMW candidate senses. | [Hugging Face](https://huggingface.co/intfloat/multilingual-e5-small) |
+| Qwen2.5-1.5B-Instruct | Optional local decoder that validates proposed substitutions without generating replacements. | [Hugging Face](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) |
 
 ## Scope Of Attribution
 
@@ -53,4 +65,4 @@ Nnois implements the orchestration around these components, including source-lan
 
 ## Licensing
 
-The Nnois source code is licensed under the [Apache License 2.0](LICENSE). This license applies only to Nnois-owned code and documentation. It does not replace the licenses, notices, or citation requirements of third-party lexical resources, language models, or software dependencies.
+The Nnois source code is licensed under the [GNU General Public License v3.0](LICENSE). This license applies only to Nnois-owned code and documentation. It does not replace the licenses, notices, or citation requirements of third-party lexical resources, language models, or software dependencies.

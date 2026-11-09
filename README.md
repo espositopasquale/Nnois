@@ -1,9 +1,12 @@
-![Nnois](Nnois_VHS.png)
+<p align="center">
+  <img src="nnois-wordmark.svg" alt="Nnois" width="520">
+</p>
 
 <p align="center">
 
   <strong>Normalized Natural-language Orthographic Index of Similarity</strong><br>
-  A multilingual orthographic transparency analysis tool
+  A multilingual orthographic transparency analysis tool<br>
+  <strong>Version 0.2.0</strong> · <a href="CHANGELOG.md">Changelog</a>
 
 </p>
 
@@ -25,6 +28,8 @@ Pronounced **/nɔɪz/** — *noise*.
 
 The name deliberately evokes the apparent noise of an unfamiliar language: unfamiliar words, unfamiliar spellings, and unfamiliar forms. Nnois turns that apparent noise into measurable patterns of similarity.
 
+The current wordmark uses interwoven orthographic signals converging on a shared meaning. The original [VHS artwork](Nnois_VHS.png) remains part of the project archive and is preserved alongside the new identity.
+
 **From unfamiliar words to recognizable patterns.  
 From recognizable patterns to understanding.  
 From understanding to connection.**
@@ -36,6 +41,10 @@ From understanding to connection.**
 - Analyze a word in context and compare its selected sense across languages.
 - Analyze multi-word input automatically through nouns and validated noun phrases.
 - Explore all available senses and translations for a single word.
+- Rank deterministic same-language alternatives from the selected OMW synset by greater or lower transparency to a comparison language.
+- Modify a complete text toward a chosen transparency level without mixing languages.
+- Disambiguate English and multilingual context locally through Java and ONNX Runtime.
+- Optionally validate proposed replacements with a local decoder that cannot invent replacement text.
 - Select the source language automatically or manually with ISO 639-1/ISO 639-2 codes.
 - View aggregate language rankings or an optional unit-by-unit report.
 - Read language output in terminal colors inspired by associated national flags.
@@ -57,6 +66,7 @@ For second-language acquisition, Nnois is most useful as a prompt for guided com
 - Maven 3.8+
 - Python 3.9+ for the project helper and database builder; Git for downloading OMW data
 - Multilingual lexical SQLite data at `nnois/src/main/resources/omw/omw_multilingual.db`
+- Local ONNX model assets for contextual sense selection; model files are intentionally excluded from Git and release archives
 
 Language-specific OpenNLP models improve tokenization, POS tagging, noun-phrase extraction, and lemmatization. The Maven configuration includes models for English, Italian, German, French, Spanish, Portuguese, and Dutch; the application falls back where models are unavailable.
 
@@ -99,9 +109,9 @@ You can also run `com.nnois.App` directly from an IDE after marking `src/main/re
 
 ## Using The CLI
 
-### Web interface
+### Analysis modes
 
-A Next.js/TypeScript interface is available in [`nnois_web/nnois/`](nnois_web/nnois/README.md), with the VHS logo, a text box, language selection, all three analysis modes, detailed results, demos, and an About page. The standalone analysis engine remains Java. A separate [Spring Boot API](api/README.md) exposes the CLI functions over HTTP. Start it with `.\api\start.ps1` from the repository root; in a second terminal run `cd nnois_web/nnois`, `pnpm install --frozen-lockfile`, and `pnpm dev`, then open `http://localhost:3000`. Next.js route handlers forward API requests to `http://127.0.0.1:8080` and never launches a JVM. The existing CLI and web layout are preserved.
+The Java CLI exposes four analysis modes. Whole-text comparison measures a text against OMW lexicalizations; one-word analysis selects a contextual occurrence; word alternatives builds a deterministic replacement scale; and the automatic modifier applies only decoder-approved candidates across a text.
 
 Type `demo` at the Java app's `Text >` prompt, then press Enter for all seven languages or choose one. You can also type `demo it` directly. The demo returns to the text prompt when finished; `back` cancels the language selection. The passages, demo runner, detection, analysis, and rendering are implemented in Java. Python is an optional setup and launch helper.
 
@@ -116,10 +126,12 @@ Language [Enter = suggested] >
 
   1  Whole-text comparison (default)
   2  One word in context
+  3  Word alternatives
+  4  Automatic text modifier
 Mode [1] >
 ```
 
-Press Enter for whole-text comparison. Choose `2` for a specific content word from the text. Invalid targets and stopwords prompt you to try again. A single-word input opens the OMW sense explorer directly.
+Press Enter for whole-text comparison. Choose `2` for a specific content word, `3` to inspect alternatives for one occurrence, or `4` to modify eligible words throughout the text. Modes 3 and 4 ask for a comparison language and whether the result should be more or less orthographically similar. Replacements always remain in the detected or selected source language. Invalid targets and stopwords prompt you to try again. A single-word input opens the OMW sense explorer directly.
 
 The main report uses aligned columns and score bars, showing up to 12 results initially. You can request the remaining results and word-by-word details. The sense explorer displays three senses at a time and groups translations by language. Long translations are abbreviated to keep the table readable.
 
@@ -213,31 +225,33 @@ Nnois is a contrastive lexical-analysis tool. It first determines which linguist
 
 ### Sense In Context
 
-Many word forms are polysemous: the same spelling can represent several meanings. Nnois uses a Lesk-style approach to reduce this ambiguity. It compares normalized context words with the glosses of candidate senses, after filtering stopwords and applying any available POS preference. The candidate with the strongest overlap supplies the shared lexical concept used for cross-language comparison.
+Many word forms are polysemous: the same spelling can represent several meanings. Nnois scores the complete occurrence context against the glosses of candidate OMW senses and accepts a sense only when both its score and its margin over the runner-up satisfy deterministic thresholds. The selected synset supplies the shared lexical concept used for comparison and substitution.
 
 ### Local model for OMW sense selection
 
-To enable semantic ranking, install [Ollama](https://ollama.com/) and pull
-[EmbeddingGemma](https://ollama.com/library/embeddinggemma), a multilingual embedding model.
-Then run in PowerShell:
+Nnois runs contextual sense selection locally in Java through ONNX Runtime. It uses [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd) for English context and [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) for Italian, French, German, Spanish, Portuguese, and Dutch. Place the exported assets in these default directories:
 
-```powershell
-ollama pull embeddinggemma
-$env:NNOIS_WSD_MODEL = "embeddinggemma"
-python nnois.py
+```text
+models/
+|-- graded-wsd/
+|   |-- model.onnx
+|   |-- tokenizer.json
+|   `-- config.json
+`-- multilingual-e5-small/
+    |-- model.onnx
+    |-- tokenizer.json
+    `-- config.json
 ```
 
-Nnois uses the [Ollama embedding API](https://docs.ollama.com/api/embed) to compare the non-stopword context with candidate OMW definitions using cosine similarity. It selects only an existing OMW offset/POS pair; translations come from that same sense. POS preferences apply before semantic ranking. The endpoint defaults to `http://localhost:11434/api/embed`; set `NNOIS_WSD_ENDPOINT` to override it. A multilingual model supports contexts whose candidate definitions are available only in English.
+Use `NNOIS_WSD_MODEL_DIR` and `NNOIS_MULTILINGUAL_WSD_MODEL_DIR` to override those paths. Both directories are resolved from the repository root by default. Model binaries are not committed or distributed with Nnois; obtain them separately and review their licenses before use.
 
-Without `NNOIS_WSD_MODEL`, lexical overlap remains active. If the configured server fails or returns invalid embeddings, Nnois prints a fallback message and uses lexical overlap. The model integration does not guarantee correct senses; its accuracy needs evaluation on labeled examples. Built-in stopword lists cover English, Italian, French, German, Spanish, Portuguese, and Dutch; optional `stopwords-<language-code>.txt` classpath files extend these lists. Stopwords are excluded from nominal coverage, sense context, and chosen-word analysis.
+The English acceptance defaults are `nnois.wsd.threshold=2.5` and `nnois.wsd.margin=0.25`. The multilingual defaults are `nnois.multilingual.wsd.threshold=0.65` and `nnois.multilingual.wsd.margin=0.01`. They can be overridden as JVM system properties for evaluation, but a release should keep them fixed for reproducibility. A missing model or an inconclusive result is reported explicitly; Nnois does not silently turn an uncertain sense into a substitution.
 
-Let $C(w)$ be the set of usable, lemmatized context terms around source lemma $w$, excluding $w$ itself. For each candidate sense $\sigma$, let $G(\sigma)$ be the usable terms from its gloss. The primary contextual score is:
+### Deterministic substitutions and optional validation
 
-$$
-L(\sigma, w) = |C(w) \cap G(\sigma)|
-$$
+After selecting a sense, Nnois obtains replacement candidates only from source-language lexicalizations in that same OMW synset. It measures each candidate against the comparison-language lexicalization with normalized Levenshtein similarity, then applies a stable ordering and deterministic tie-breaks. The comparison language controls the transparency target; it never becomes the output language.
 
-Nnois selects the candidate with the greatest $L(\sigma,w)$. If a POS is inferred from the input, candidates with that POS are preferred before scoring. When candidates remain tied or no gloss overlaps with the context, the native pipeline applies a deterministic fallback: noun, verb, adjective, adverb, then stable synset ordering. This makes repeated analysis reproducible for the same data and input.
+For automatic rewriting, an optional local [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) ONNX decoder checks the cohesion of each already-selected candidate in context. It returns only `accepted`, `rejected`, or `unverified`; it does not generate prose or replacement words. Unverified candidates are not applied. Set `NNOIS_SUBSTITUTION_MODEL_DIR` and `NNOIS_SUBSTITUTION_PYTHON` if the model and its isolated Python runtime are outside the default `models/substitution-decoder-onnx` and `.venv-decoder` paths. The core analysis and candidate generation remain Java-based and deterministic.
 
 ### Reading Across Languages
 
@@ -324,10 +338,11 @@ The builder is `omw-database/create_db.py` (Python with standard-library SQLite)
 Nnois/
 ├── nnois/              Java/Maven application
 │   ├── src/main/java/  CLI, NLP, disambiguation, and scoring
-│   └── src/main/resources/
-│       └── omw/        OMW SQLite database
-├── omw-data/           Utilities and source data for OMW preparation
-└── omw-database/       Database creation utility
+│   └── src/main/resources/omw/
+│                       Generated OMW database and attribution
+├── models/             Local model assets, excluded from Git
+├── omw-database/       Database creation utility
+└── tests/              Python helper tests
 ```
 
 ## Troubleshooting
@@ -337,12 +352,14 @@ Nnois/
 | Database cannot be found | Confirm that `omw_multilingual.db` is present under `src/main/resources/omw/`. |
 | Language detection is unreliable | Use a longer input or select a source language manually. |
 | No senses are returned | Check the source lemma, selected language code, and the `synset_lemmas` lexical-data table. |
+| Contextual model cannot be loaded | Check the model files and set `NNOIS_WSD_MODEL_DIR` or `NNOIS_MULTILINGUAL_WSD_MODEL_DIR`. |
+| Automatic modifier applies no changes | Install the optional decoder and Python runtime, or inspect candidates in mode 3. Unverified candidates are intentionally not applied. |
 | No nominal units are detected | Verify that the tokenizer and POS model for the source language are available. |
 | Colors render as text | Run the CLI in an ANSI-compatible terminal. |
 
 ## Attributions
 
-Nnois depends on open lexical resources and libraries. See [Attributions.md](Attributions.md) for the complete resource and software credits.
+Nnois depends on open lexical resources, models, and libraries. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the complete resource, model, and software credits.
 
 Key resources:
 
@@ -353,7 +370,7 @@ Key resources:
 
 ## License
 
-The Nnois source code is licensed under the [GNU General Public License](LICENSE). Linguistic data, language models, and software dependencies included or used by the project remain subject to their own license terms and notices, summarized in [Attributions.md](Attributions.md).
+The Nnois source code is licensed under the [GNU General Public License v3.0](LICENSE). Linguistic data, language models, and software dependencies included or used by the project remain subject to their own license terms and notices, summarized in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
 ## Development
 
