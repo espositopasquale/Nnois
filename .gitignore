@@ -1,26 +1,81 @@
-target/
+# Maven output and release metadata
+**/target/
+dependency-reduced-pom.xml
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
 release.properties
-dependency-reduced-pom.xml
 buildNumber.properties
-.mvn/timing.properties
-# https://maven.apache.org/tools/wrapper/#Usage_with_or_without_Binary_JAR
-.mvn/wrapper/maven-wrapper.jar
+**/.mvn/timing.properties
 
-# Eclipse m2e generated files
-# Eclipse Core
-.project
-# JDT-specific (Eclipse Java Development Tools)
-.classpath
+# Compiled Java packages
+*.class
+*.jar
+*.war
+*.ear
+!**/.mvn/wrapper/maven-wrapper.jar
 
-omw-data
-resources
-
-.venv
+# Large local NLP data and model exports
+**/models/
+*.onnx
+*.onnx_data
+*.safetensors
 *.db
+*.db-shm
+*.db-wal
+/omw-data/
+/resources/
 
-release
-.vscode
+# Python helper environments and caches
+/.venv/
+/.venv-*/
+**/__pycache__/
+*.py[cod]
+
+# Logs, diagnostics and temporary files
+*.log
+*.dump
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.pid
+hs_err_pid*
+replay_pid*
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+application-local.properties
+application-local.yml
+application-local.yaml
+
+# IDE metadata
+**/.idea/
+**/.vscode/
+**/.settings/
+**/.classpath
+**/.project
+**/.factorypath
+*.iml
+*.ipr
+*.iws
+**/out/
+**/nbproject/private/
+**/nbbuild/
+**/nbdist/
+**/.nb-gradle/
+
+# Operating-system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local release and verification staging
+/release/
+/.verify-classes/
