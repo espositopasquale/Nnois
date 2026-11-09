@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="nnois-wordmark.svg" alt="Nnois" width="520">
+  <img src="nnois-wordmark-black.svg" alt="Nnois" width="520">
 </p>
 
 <p align="center">
