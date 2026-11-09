@@ -11,7 +11,9 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 import com.nnois.nlp.AutoTuningMultilingualPipeline;
+import com.nnois.nlp.AutoTuningMultilingualPipeline.NominalSenseComparison;
 import com.nnois.nlp.LanguageIdentification;
+import com.nnois.nlp.NativeMultilingualPipeline.TransparencyResult;
 import com.nnois.nlp.OpenNLPMWEExtractor;
 
 public class CliSessionTest {
@@ -23,6 +25,7 @@ public class CliSessionTest {
         String text;
         boolean failOnce;
         String detected = "eng";
+        List<NominalSenseComparison> comparisons = List.of();
 
         public LanguageIdentification.Detection detect(String text) {
             return new LanguageIdentification.Detection(detected, 0.6,
@@ -38,7 +41,8 @@ public class CliSessionTest {
             }
             return new AutoTuningMultilingualPipeline.ContrastiveResult(
                     AutoTuningMultilingualPipeline.AnalysisMode.NOMINAL_AGGREGATE_SUM, language, 1, null, 0,
-                    new OpenNLPMWEExtractor.NominalAggregateResult(0, 0, List.of()), List.of(), List.of());
+                    new OpenNLPMWEExtractor.NominalAggregateResult(0, 0, List.of()), List.of(), List.of(), null,
+                    comparisons);
         }
 
         public List<AutoTuningMultilingualPipeline.SenseTranslationResult> senses(String word, String language) {
@@ -122,5 +126,23 @@ public class CliSessionTest {
         assertEquals(2, service.analyses);
         assertTrue(service.text.contains("fiume"));
         assertTrue(output.contains("Demo language must be"));
+    }
+
+    @Test
+    public void alternativesListOnlyOccurrencesWithCandidatesForComparisonLanguage() throws Exception {
+        var service = new FakeService();
+        service.comparisons = List.of(
+                new NominalSenseComparison("boat", "noun", 4, 8, "1", "n", "a vessel", true, .9,
+                        List.of(new TransparencyResult("eng", "boat", 1),
+                                new TransparencyResult("ita", "natante", .2))),
+                new NominalSenseComparison("hospital", "noun", 19, 27, "2", "n", "a medical institution", true, .9,
+                        List.of(new TransparencyResult("eng", "hospital", 1),
+                                new TransparencyResult("eng", "clinic", .2),
+                                new TransparencyResult("ita", "ospedale", .3),
+                                new TransparencyResult("ita", "clinica", .8))));
+        String output = session(service, "The boat nears the hospital\n\n3\nit\nback\nexit\n");
+        assertTrue(output.contains("hospital (characters 19-27)"));
+        assertFalse(output.contains("boat (characters 4-8)"));
+        assertFalse(output.contains("No same-language alternatives found"));
     }
 }
