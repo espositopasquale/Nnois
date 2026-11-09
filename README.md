@@ -407,13 +407,5 @@ The SQLite connection is owned by the active pipeline and is closed with it. Nat
 
 Nnois uses [Open Multilingual Wordnet data](https://github.com/omwn/omw-data). Please also cite Francis Bond and Ryan Foster (2013), [Linking and Extending an Open Multilingual Wordnet](https://aclanthology.org/P13-1133/), ACL, pages 1352–1362, and the individual wordnets used. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for the full reference and BibTeX.
 
-If you use Nnois in academic work, please cite the accompanying thesis:
-
-```
-Esposito, P. (2026). Nnois: Normalized Natural-language Orthographic Index of Similarity.
-Doctoral thesis, University of Salerno.
-```
-
-The official thesis record is available in the University of Salerno's institutional repository (IRIS): [https://www.iris.unisa.it/handle/11386/4938058](https://www.iris.unisa.it/handle/11386/4938058)
 
 ---
