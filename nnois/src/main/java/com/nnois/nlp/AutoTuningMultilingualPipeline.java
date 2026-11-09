@@ -212,7 +212,6 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         String detectedLangCode = resolveOmwLangCode(predicted.code());
         double confidence = predicted.confidence();
 
-        WsdSelection.requireEnglish(detectedLangCode);
         var target = getOrCreateLanguageNlp(detectedLangCode).findTarget(rawSentence, targetWord);
         var bestSynset = disambiguator.disambiguateNative(target.lemma(), detectedLangCode,
                 OccurrenceContext.fromDocument(rawSentence, target.begin(), target.end()),
@@ -277,7 +276,6 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         }
 
         String omwLangCode = resolveOmwLangCode(selectedLangCode);
-        WsdSelection.requireEnglish(omwLangCode);
 
         OpenNLPMWEExtractor nominalExtractor = buildNominalExtractorForLanguage(selectedLangCode);
         OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate = nominalExtractor
@@ -396,7 +394,6 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
             String detectedLangCode,
             OpenNLPMWEExtractor.NominalAggregateResult nominalAggregate) throws Exception {
 
-        WsdSelection.requireEnglish(detectedLangCode);
         Set<String> stopwords = getOrCreateStopwords(detectedLangCode);
 
         Map<String, Double> languageTotals = new HashMap<>();
@@ -484,7 +481,6 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
     private ContextualAnalysis analyzeWordInContext(String rawSentence, String targetWord, String detectedLangCode)
             throws Exception {
 
-        WsdSelection.requireEnglish(detectedLangCode);
         var target = getOrCreateLanguageNlp(detectedLangCode).findTarget(rawSentence, targetWord);
         var bestSynset = disambiguator.disambiguateNative(target.lemma(), detectedLangCode,
                 OccurrenceContext.fromDocument(rawSentence, target.begin(), target.end()),
@@ -682,7 +678,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
         } finally {
             if (sqliteConn != null && !sqliteConn.isClosed()) {
                 sqliteConn.close();
-        
-            }}
+            }
+        }
     }
 }

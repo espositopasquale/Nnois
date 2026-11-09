@@ -8,7 +8,9 @@ import java.util.*;
 public final class NativeOmwDisambiguator implements AutoCloseable {
     private final Connection conn;
     private final WsdSelection selection;
-    private OmwSenseModel senseModel;
+    private final OmwSenseModel suppliedModel;
+    private OmwSenseModel englishModel;
+    private OmwSenseModel multilingualModel;
     private WordNetRepository wordnet;
     private boolean closed;
 
@@ -16,7 +18,7 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
     public NativeOmwDisambiguator(Connection conn, OmwSenseModel model) { this(conn, model, WsdSelection.configured()); }
     public NativeOmwDisambiguator(Connection conn, OmwSenseModel model, WsdSelection selection) {
         this.conn = Objects.requireNonNull(conn, "conn");
-        this.senseModel = model;
+        this.suppliedModel = model;
         this.selection = Objects.requireNonNull(selection, "selection");
     }
 
@@ -43,21 +45,29 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
     public Result analyze(String lemma, String language, OccurrenceContext context,
             Set<String> stopwords, String preferredPos) throws SQLException {
         if (closed) throw new IllegalStateException("WSD disambiguator is closed");
-        WsdSelection.requireEnglish(language);
+        String normalizedLanguage = LanguageIdentification.normalizeCode(language);
         if (lemma == null || lemma.isBlank()
                 || (stopwords != null && stopwords.contains(lemma.strip().toLowerCase(Locale.ROOT)))) {
             return new Result("unlinked", null, List.of());
         }
         Objects.requireNonNull(context, "Original context and target offsets are required");
-        List<CandidateSynset> candidates = candidates(lemma, preferredPos);
+        List<CandidateSynset> candidates = candidates(lemma, normalizedLanguage, preferredPos);
         if (candidates.isEmpty()) return new Result("unlinked", null, List.of());
         List<CandidateSynset> defined = candidates.stream().filter(c -> !c.gloss.isBlank()).toList();
         if (defined.isEmpty()) return new Result("missing-english-definition", null, List.of());
         try {
-            if (senseModel == null) senseModel = new GradedWsdModel(GradedWsdModel.configuredDirectory());
-            double[] scores = senseModel.score(context, defined.stream().map(c -> c.gloss).toList());
+            OmwSenseModel activeModel = suppliedModel;
+            if (activeModel == null && "eng".equals(normalizedLanguage)) {
+                if (englishModel == null) englishModel = new GradedWsdModel(GradedWsdModel.configuredDirectory());
+                activeModel = englishModel;
+            } else if (activeModel == null) {
+                if (multilingualModel == null) multilingualModel = new MultilingualE5Model();
+                activeModel = multilingualModel;
+            }
+            double[] scores = activeModel.score(context, defined.stream().map(c -> c.gloss).toList());
             if (scores.length != defined.size()) throw new IllegalArgumentException("Invalid WSD score count");
-            int selected = selection.select(scores);
+            int selected = ("eng".equals(normalizedLanguage) || suppliedModel != null
+                    ? selection : WsdSelection.multilingualConfigured()).select(scores);
             List<ScoredSense> ranked = new ArrayList<>();
             for (int i = 0; i < scores.length; i++) ranked.add(new ScoredSense(defined.get(i), scores[i]));
             ranked.sort(Comparator.comparingDouble(ScoredSense::applicabilityScore).reversed()
@@ -66,16 +76,37 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
             return new Result(selected < 0 ? "ambiguous" : "resolved", selected < 0 ? null : defined.get(selected), ranked);
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IllegalStateException("graded-wsd failed for '" + lemma + "': " + error.getMessage(), error);
+            throw new IllegalStateException(("eng".equals(normalizedLanguage) ? "graded-wsd" : "multilingual E5")
+                    + " failed for '" + lemma + "': " + error.getMessage(), error);
         }
     }
 
-    private List<CandidateSynset> candidates(String lemma, String preferredPos) throws SQLException {
+    private List<CandidateSynset> candidates(String lemma, String language, String preferredPos) throws SQLException {
         if (conn.isClosed()) throw new SQLException("OMW connection is closed");
         String pos = preferredPos == null || preferredPos.isBlank() ? null : preferredPos.strip().toLowerCase(Locale.ROOT);
         if ("s".equals(pos)) pos = "a";
         if (pos != null && !Set.of("n", "v", "a", "r").contains(pos)) {
             throw new IllegalArgumentException("Unsupported WordNet POS: " + preferredPos);
+        }
+        if (!"eng".equals(language)) {
+            String sql = "SELECT l.synset_offset, l.pos, COALESCE(MIN(en.def), MIN(src.def), '') AS gloss "
+                    + "FROM synset_lemmas l "
+                    + "LEFT JOIN synset_def en ON en.synset_offset=l.synset_offset AND en.pos=l.pos AND en.lang='eng' "
+                    + "LEFT JOIN synset_def src ON src.synset_offset=l.synset_offset AND src.pos=l.pos AND src.lang=l.lang "
+                    + "WHERE l.lang=? AND LOWER(REPLACE(l.lemma, '_', ' '))=? "
+                    + (pos == null ? "" : "AND l.pos=? ")
+                    + "GROUP BY l.synset_offset, l.pos ORDER BY l.synset_offset, l.pos";
+            List<CandidateSynset> result = new ArrayList<>();
+            try (var statement = conn.prepareStatement(sql)) {
+                statement.setString(1, language);
+                statement.setString(2, lemma.strip().toLowerCase(Locale.ROOT).replace('_', ' '));
+                if (pos != null) statement.setString(3, pos);
+                try (var rows = statement.executeQuery()) {
+                    while (rows.next()) result.add(new CandidateSynset(rows.getString(1), rows.getString(2),
+                            Objects.toString(rows.getString(3), ""), lemma));
+                }
+            }
+            return List.copyOf(result);
         }
         try {
             if (wordnet == null) {
@@ -109,7 +140,10 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
     public void close() throws Exception {
         if (closed) return;
         closed = true;
-        try { if (senseModel != null) senseModel.close(); }
-        finally { if (wordnet != null) wordnet.close(); }
+        try {
+            if (suppliedModel != null) suppliedModel.close();
+            if (englishModel != null) englishModel.close();
+            if (multilingualModel != null) multilingualModel.close();
+        } finally { if (wordnet != null) wordnet.close(); }
     }
 }

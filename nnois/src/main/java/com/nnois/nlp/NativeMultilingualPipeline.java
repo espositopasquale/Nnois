@@ -1,7 +1,6 @@
 package com.nnois.nlp;
 
 import com.nnois.nlp.wsd.OccurrenceContext;
-import com.nnois.nlp.wsd.WsdSelection;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -60,7 +59,6 @@ public class NativeMultilingualPipeline implements AutoCloseable {
 
     public List<TransparencyResult> analyzeNativeAndCalculateTransparency(String rawSentence, String targetWord, String sourceLang) throws Exception {
 
-        WsdSelection.requireEnglish(sourceLang);
         var target = sourceNlp.findTarget(rawSentence, targetWord);
         var bestSynset = disambiguator.disambiguateNative(target.lemma(), sourceLang,
                 OccurrenceContext.fromDocument(rawSentence, target.begin(), target.end()), stopWords, target.pos());
