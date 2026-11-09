@@ -1,5 +1,4 @@
 #!/bin/sh
-# Prepare OMW and start the Java CLI using the cross-platform setup helper.
 set -eu
 
 script_dir=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd)

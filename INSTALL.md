@@ -29,29 +29,98 @@ This single command downloads missing OMW data, builds and validates the databas
 
 At `Text >`, enter a word or sentence, then accept automatic language detection or choose a language such as `en` or `it`. Select whole-text comparison, one word in context, word alternatives, or automatic text modifier. Enter `exit` or `quit` at the text prompt to finish.
 
-## Linux and macOS
+## Linux
 
-Install JDK 21, Maven 3.8+, Python 3.9+, and Git with your operating system's
-package manager or the tools' official installers. Homebrew is another option
-on macOS. Open a terminal in the repository root and check the tools:
+On Debian or Ubuntu, install the required tools with:
 
-```sh
+```bash
+sudo apt update
+sudo apt install openjdk-21-jdk maven python3 git
+```
+
+On Fedora:
+
+```bash
+sudo dnf install java-21-openjdk-devel maven python3 git
+```
+
+Confirm that Maven is using Java 21:
+
+```bash
 java -version
 javac -version
 mvn -version
 python3 --version
 git --version
-sh ./nnois.sh
 ```
 
-The shell launcher selects Python 3.9+ and prepares missing OMW data before
-starting the CLI. It also works when invoked by path from another directory.
-To run it directly, use `chmod +x nnois.sh` once, then `./nnois.sh`.
-All helper options are forwarded, for example `sh ./nnois.sh --help`,
-`sh ./nnois.sh demo`, or `sh ./nnois.sh build-db`.
-Initial downloads
-require internet access; no additional Python packages are needed. If Maven
-uses a different JDK, set `JAVA_HOME` to your JDK 21 directory.
+Then open the extracted release or cloned repository and start Nnois:
+
+```bash
+cd /path/to/nnois
+chmod +x nnois.sh
+./nnois.sh
+```
+
+If Maven reports another Java version, locate the JDK with `readlink -f "$(command -v javac)"` and set `JAVA_HOME` to its JDK directory before starting Nnois. For example:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+./nnois.sh
+```
+
+The exact JDK directory can differ by distribution and architecture.
+
+## macOS
+
+With [Homebrew](https://brew.sh/) installed, install the prerequisites with:
+
+```bash
+brew install openjdk@21 maven python git
+```
+
+Configure the current terminal to use the Homebrew JDK:
+
+```bash
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+To keep this configuration, add those two `export` lines to `~/.zshrc`, then open a new terminal or run `source ~/.zshrc`. Verify the tools and start Nnois:
+
+```bash
+java -version
+javac -version
+mvn -version
+python3 --version
+git --version
+cd /path/to/nnois
+chmod +x nnois.sh
+./nnois.sh
+```
+
+Apple Silicon and Intel Macs can use the same commands because `brew --prefix` resolves the correct Homebrew location.
+
+## Shell launcher behavior
+
+The Linux and macOS launcher selects Python 3.9 or later and prepares missing OMW data before starting the CLI. It also works when invoked by its full path from another directory. All helper options are forwarded:
+
+```bash
+./nnois.sh --help
+./nnois.sh demo
+./nnois.sh build-db
+```
+
+Initial database downloads require internet access. No additional Python packages are needed for the database builder or normal Java CLI. If executable permissions were lost while extracting an archive, run `chmod +x nnois.sh` again.
+
+To use contextual models stored outside the project on Linux or macOS, configure their directories before launching:
+
+```bash
+export NNOIS_WSD_MODEL_DIR="/path/to/models/graded-wsd"
+export NNOIS_MULTILINGUAL_WSD_MODEL_DIR="/path/to/models/multilingual-e5-small"
+./nnois.sh
+```
 
 ## Contextual models
 

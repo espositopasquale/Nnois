@@ -82,6 +82,22 @@ From the project root on Windows:
 
 This handles first-time setup automatically: download missing OMW data, build and check the database, install its attribution, compile Java, and start the CLI. Later runs reuse the database. Requires Python, JDK 21, Maven, and Git for downloads. Normal startup does not run tests.
 
+On Linux:
+
+```bash
+chmod +x nnois.sh
+./nnois.sh
+```
+
+On macOS:
+
+```bash
+chmod +x nnois.sh
+./nnois.sh
+```
+
+The shell launcher finds Python 3.9 or later, prepares the OMW database when needed, compiles the Java CLI, and starts it. See [INSTALL.md](INSTALL.md#linux) for `apt` and `dnf` installation commands, or [the macOS instructions](INSTALL.md#macos) for Homebrew and JDK configuration.
+
 On any platform, the equivalent command is:
 
 ```bash
