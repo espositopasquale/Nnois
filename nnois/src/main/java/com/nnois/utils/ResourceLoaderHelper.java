@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -19,7 +20,7 @@ public class ResourceLoaderHelper {
     private File tempDbFile;
 
     public Connection loadSqliteFromResources(String resourcePath) throws Exception {
-        try (InputStream dbStream = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+        try (InputStream dbStream = openResource(resourcePath)) {
             if (dbStream == null) {
                 throw new FileNotFoundException("File database non trovato in resources: " + resourcePath);
             }
@@ -32,6 +33,31 @@ public class ResourceLoaderHelper {
 
         String dbUrl = "jdbc:sqlite:" + this.tempDbFile.getAbsolutePath();
         return DriverManager.getConnection(dbUrl);
+    }
+
+    public static boolean resourceExists(String resourcePath) {
+        return externalFile(resourcePath) != null
+                || ResourceLoaderHelper.class.getClassLoader().getResource(resourcePath) != null;
+    }
+
+    public static Path dataRoot() {
+        String configured = System.getProperty("nnois.data.dir", System.getenv("NNOIS_DATA_DIR"));
+        Path root = configured == null || configured.isBlank()
+                ? Path.of(System.getProperty("user.home"), ".nnois") : Path.of(configured);
+        return root.toAbsolutePath().normalize();
+    }
+
+    private static InputStream openResource(String resourcePath) throws IOException {
+        Path external = externalFile(resourcePath);
+        if (external != null) return Files.newInputStream(external);
+        return ResourceLoaderHelper.class.getClassLoader().getResourceAsStream(resourcePath);
+    }
+
+    private static Path externalFile(String resourcePath) {
+        Path dataFile = dataRoot().resolve(resourcePath).normalize();
+        if (Files.isRegularFile(dataFile)) return dataFile;
+        Path workingDirectoryFile = Path.of(resourcePath).toAbsolutePath().normalize();
+        return Files.isRegularFile(workingDirectoryFile) ? workingDirectoryFile : null;
     }
 
     public Set<String> loadStopWordsFromStream(String resourcePath) throws IOException {
