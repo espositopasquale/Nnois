@@ -15,7 +15,7 @@ public record WsdSelection(double threshold, double margin) {
 
     public static WsdSelection multilingualConfigured() {
         return new WsdSelection(Double.parseDouble(System.getProperty("nnois.multilingual.wsd.threshold", "0.65")),
-                Double.parseDouble(System.getProperty("nnois.multilingual.wsd.margin", "0.01")));
+                Double.parseDouble(System.getProperty("nnois.multilingual.wsd.margin", "0.001")));
     }
 
     public int select(double[] scores) {

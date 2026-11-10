@@ -113,7 +113,7 @@ public class CliSessionTest {
     public void interactiveDemoRunsAllLanguagesAndReturnsToTextPrompt() throws Exception {
         var service = new FakeService();
         String output = session(service, "demo\n\nexit\n");
-        assertEquals(14, service.analyses);
+        assertEquals(12, service.analyses);
         assertTrue(output.contains("European languages demo"));
         assertTrue(output.contains("Demo summary"));
         assertTrue(output.endsWith("Goodbye.\n") || output.endsWith("Goodbye.\r\n"));

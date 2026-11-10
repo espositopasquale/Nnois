@@ -6,7 +6,8 @@ All notable changes to Nnois are documented in this file.
 
 ### Added
 
-- Contextual word-sense disambiguation in Java with local ONNX models: `ChangeIsKey/graded-wsd` for English and `intfloat/multilingual-e5-small` for Italian, French, German, Spanish, Portuguese, and Dutch.
+- A shaded executable JAR with a Java launcher for `run`, `demo`, `build-db`, `setup`, and `repair-data`; OMW database generation and validation now run without Python, and Maven keeps the built JAR in the module's `target/` directory.
+- Contextual word-sense disambiguation in Java with local ONNX models: `ChangeIsKey/graded-wsd` for English and `intfloat/multilingual-e5-small` for Italian, French, Spanish, Portuguese, and Dutch.
 - A deterministic word-alternatives mode that ranks source-language lexicalizations from the selected OMW synset by orthographic transparency to a comparison language.
 - An automatic text modifier that can make a text orthographically more or less similar to a selected comparison language while keeping replacements in the source language.
 - Optional local Qwen decoder validation for checking the contextual cohesion of proposed replacements. The decoder accepts or rejects existing candidates and never generates replacement text.

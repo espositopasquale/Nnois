@@ -1,6 +1,6 @@
 # European language demo texts
 
-Run `python nnois.py demo` for all seven languages, or `python nnois.py demo --language it` for one.
+Run `python nnois.py demo` for all six languages, or `python nnois.py demo --language it` for one.
 
 These parallel passages cover city life, nature, learning, markets, and energy. Each demo reports language detection, whole-text analysis, and the contextual OMW sense of the target word.
 
@@ -21,12 +21,6 @@ Il sabato mattina, le famiglie passeggiano nel parco della città accanto al fiu
 Target: **rivière**
 
 Le samedi matin, les familles se promènent dans le parc de la ville près de la rivière. Les enfants observent les oiseaux et les arbres pendant qu'un enseignant explique comment l'eau propre protège la nature. De l'autre côté du pont, la bibliothèque publique accueille des étudiants qui lisent des livres sur l'histoire, la science et la musique. Les agriculteurs locaux vendent du pain, des fruits et des légumes au marché. L'après-midi, les habitants discutent des énergies renouvelables, des transports publics et de l'avenir de leur communauté.
-
-## German (deu)
-
-Target: **Fluss**
-
-Am Samstagmorgen spazieren Familien durch den Stadtpark neben dem Fluss. Kinder beobachten Vögel und Bäume, während ein Lehrer erklärt, wie sauberes Wasser die Natur schützt. Auf der anderen Seite der Brücke empfängt die öffentliche Bibliothek Studenten, die Bücher über Geschichte, Wissenschaft und Musik lesen. Bauern aus der Region verkaufen Brot, Obst und Gemüse auf dem Markt. Am Nachmittag sprechen die Bewohner über erneuerbare Energie, öffentliche Verkehrsmittel und die Zukunft ihrer Gemeinschaft.
 
 ## Spanish (spa)
 

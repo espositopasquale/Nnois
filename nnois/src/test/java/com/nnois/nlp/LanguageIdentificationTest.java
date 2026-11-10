@@ -33,6 +33,7 @@ public class LanguageIdentificationTest {
         assertEquals("eng", LanguageIdentification.normalizeCode(" English "));
         assertEquals("fra", LanguageIdentification.normalizeCode("fre"));
         assertEquals("deu", LanguageIdentification.normalizeCode("DE"));
+        assertFalse(LanguageIdentification.supported("deu"));
         assertFalse(LanguageIdentification.supported("jpn"));
         assertEquals("Italian (ita)", LanguageIdentification.label("it"));
     }
@@ -45,6 +46,7 @@ public class LanguageIdentificationTest {
     }
     @Test public void detectsAllFullDemoPassages() throws Exception {
         var detector = new LanguageIdentification("langdetect-183.bin");
+        assertEquals(6, com.nnois.DemoTexts.SAMPLES.size());
         for (var sample : com.nnois.DemoTexts.SAMPLES) {
             assertEquals(sample.language(), detector.detect(sample.text()).code());
             assertTrue(sample.text().contains(sample.target()));

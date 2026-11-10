@@ -441,7 +441,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
                     ? entry.getValue() / nominalAggregate.totalNominalUnits : 0.0;
             aggregateResults.add(new NativeMultilingualPipeline.TransparencyResult(
                     entry.getKey(),
-                    "MEAN_NOMINAL_UNITS",
+                    "TEXT_NOMINAL_SIMILARITY",
                     normalizedScore));
         }
 
@@ -526,7 +526,7 @@ public class AutoTuningMultilingualPipeline implements AutoCloseable {
     private static void requireSupportedLanguage(String langCode) {
         if (!LanguageIdentification.supported(langCode)) {
             throw new IllegalArgumentException("No bundled NLP models for " + langCode
-                    + ". Choose en, it, fr, de, es, pt or nl.");
+                    + ". Choose en, it, fr, es, pt or nl.");
         }
     }
 

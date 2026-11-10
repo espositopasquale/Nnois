@@ -1,115 +1,77 @@
 package com.nnois.banner;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import com.nnois.utils.TerminalColors;
 
-public class Banner {
+/** Compact terminal wordmark shared by the interactive CLI and demos. */
+public final class Banner {
+    private static final int INNER_WIDTH = 68;
+    private static final int BOX_WIDTH = INNER_WIDTH + 2;
+    private static final String SUBTITLE = "Normalized  Natural-language  Orthographic  Index  of  Similarity";
+    private static final String CYAN = "1;38;2;98;232;234";
+    private static final String RED = "1;38;2;255;95;114";
+    private static final String CREAM = "1;38;2;242;239;231";
+    private static final String MUTED = "38;2;132;145;148";
 
-    private static final String RESET = "\u001B[0m";
-    private static final String BOLD = "\u001B[1m";
-    private static final String RED = "\u001B[91m";
-    private static final String CYAN = "\u001B[38;2;85;187;255m";
-    private static final String WHITE = "\u001B[97m";
-    private static final String DARK_GRAY = "\u001B[90m";
-
-    private static final int WIDTH = 86;
-    private static final int OFFSET = 1;
-
-    private static final String SUBTITLE = "Normalized Natural-language Orthographic Index of Similarity";
-
-    private static final String[] ASCII_LOGO = new String[]{
-        "░███    ░██                        ░██            ",
-        "░████   ░██                                       ",
-        "░██░██  ░██ ░████████   ░███████   ░██ ░███████   ",
-        "░██ ░██ ░██ ░██    ░██ ░██    ░██  ░██░██         ",
-        "░██  ░██░██ ░██    ░██ ░██    ░██  ░██ ░███████   ",
-        "░██   ░████ ░██    ░██ ░██    ░██  ░██        ░██ ",
-        "░██    ░███ ░██    ░██  ░███████   ░██ ░███████   ",
-        "                                                  "
-    };
+    private Banner() { }
 
     public static String format() {
-        String styledSubtitle = center(formatSubtitleAcronym(SUBTITLE), WIDTH, SUBTITLE.length());
+        boolean unicode = TerminalColors.unicodeEnabled();
+        String indent = " ".repeat(Math.max(0, (terminalColumns() - BOX_WIDTH) / 2));
+        String horizontal = unicode ? "─" : "-";
+        String top = indent + (unicode ? "╭" : "+") + horizontal.repeat(INNER_WIDTH) + (unicode ? "╮" : "+");
+        String middle = indent + (unicode ? "├" : "+") + horizontal.repeat(INNER_WIDTH) + (unicode ? "┤" : "+");
+        String bottom = indent + (unicode ? "╰" : "+") + horizontal.repeat(INNER_WIDTH) + (unicode ? "╯" : "+");
+        String side = indent + (unicode ? "│ " : "| ");
+        String sideEnd = unicode ? " │" : " |";
+        String[] logo = {
+            " _   _             _       ",
+            "| \\ | |_ __   ___ (_)___   ",
+            "|  \\| | '_ \\ / _ \\| / __|  ",
+            "| |\\  | | | | (_) | \\__ \\; ",
+            "|_| \\_|_| |_|\\___/|_|___/  "
+        };
 
-        StringBuilder logoBuilder = new StringBuilder();
-        for (String line : ASCII_LOGO) {
-            logoBuilder.append(applyAnaglyph(center(line, WIDTH, line.length()))).append("\n");
+        StringBuilder output = new StringBuilder("\n");
+        output.append(TerminalColors.style(top, MUTED)).append('\n');
+        for (int row = 0; row < logo.length; row++) {
+            String color = row % 3 == 0 ? CYAN : row % 3 == 1 ? CREAM : RED;
+            output.append(TerminalColors.style(side, MUTED))
+                    .append(TerminalColors.style(center(logo[row], INNER_WIDTH), color))
+                    .append(TerminalColors.style(sideEnd, MUTED)).append('\n');
         }
 
-        String banner = new StringBuilder()
-                .append("\n")
-                .append(logoBuilder)
-                .append(styledSubtitle).append("\n")
-                .toString();
-        return TerminalColors.enabled() ? banner : banner.replaceAll("\u001B\\[[0-9;]*m", "");
+        int subtitleLeft = Math.max(0, (INNER_WIDTH - SUBTITLE.length()) / 2);
+        int subtitleRight = Math.max(0, INNER_WIDTH - SUBTITLE.length() - subtitleLeft);
+        output.append(TerminalColors.style(middle, MUTED)).append('\n')
+                .append(TerminalColors.style(side + " ".repeat(subtitleLeft), MUTED))
+                .append(TerminalColors.style("N", CYAN)).append(TerminalColors.style("ormalized  ", MUTED))
+                .append(TerminalColors.style("N", RED)).append(TerminalColors.style("atural-language  ", MUTED))
+                .append(TerminalColors.style("O", CREAM)).append(TerminalColors.style("rthographic  ", MUTED))
+                .append(TerminalColors.style("I", CYAN)).append(TerminalColors.style("ndex  ", MUTED))
+                .append(TerminalColors.style("o", RED)).append(TerminalColors.style("f  ", MUTED))
+                .append(TerminalColors.style("S", CREAM)).append(TerminalColors.style("imilarity", MUTED))
+                .append(TerminalColors.style(" ".repeat(subtitleRight) + sideEnd, MUTED)).append('\n')
+                .append(TerminalColors.style(bottom, MUTED)).append('\n');
+        return output.toString();
+    }
+
+    private static String center(String text, int width) {
+        if (text.length() >= width) return text.substring(0, width);
+        int left = (width - text.length()) / 2;
+        return " ".repeat(left) + text + " ".repeat(width - text.length() - left);
+    }
+
+    private static int terminalColumns() {
+        try {
+            return Math.max(BOX_WIDTH, Math.min(240,
+                    Integer.parseInt(System.getenv().getOrDefault("COLUMNS", "100"))));
+        } catch (NumberFormatException ignored) {
+            return 100;
+        }
     }
 
     public static void print() {
-        System.out.println(format());
-    }
-
-    private static String formatSubtitleAcronym(String text) {
-        String[] anaglyphColors = {RED, WHITE, CYAN};
-        Matcher matcher = Pattern.compile("\\b([A-Za-z])(\\w*)").matcher(text);
-        StringBuilder sb = new StringBuilder();
-        int colorIndex = 0;
-
-        while (matcher.find()) {
-            String firstLetter = matcher.group(1);
-            String restOfWord = matcher.group(2);
-
-            String color = anaglyphColors[colorIndex % anaglyphColors.length];
-            colorIndex++;
-
-            String replacement = BOLD + color + firstLetter + RESET
-                    + BOLD + DARK_GRAY + restOfWord + RESET;
-            matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
-        }
-        matcher.appendTail(sb);
-        return sb.toString();
-    }
-
-    private static String applyAnaglyph(String line) {
-        StringBuilder result = new StringBuilder();
-        int len = line.length();
-
-        for (int i = 0; i < len; i++) {
-            int redSourceIndex = i + OFFSET;
-            int cyanSourceIndex = i - OFFSET;
-
-            char redChar = (redSourceIndex >= 0 && redSourceIndex < len) ? line.charAt(redSourceIndex) : ' ';
-            char cyanChar = (cyanSourceIndex >= 0 && cyanSourceIndex < len) ? line.charAt(cyanSourceIndex) : ' ';
-
-            boolean hasRed = redChar != ' ';
-            boolean hasCyan = cyanChar != ' ';
-
-            if (hasRed && hasCyan) {
-                result.append(BOLD).append(WHITE).append(line.charAt(i) != ' ' ? line.charAt(i) : redChar).append(RESET);
-            } else if (hasRed) {
-                result.append(BOLD).append(RED).append(redChar).append(RESET);
-            } else if (hasCyan) {
-                result.append(BOLD).append(CYAN).append(cyanChar).append(RESET);
-            } else {
-                result.append(' ');
-            }
-        }
-        return result.toString();
-    }
-
-    private static String center(String formattedText, int targetWidth, int visibleLength) {
-        if (visibleLength >= targetWidth) {
-            return formattedText;
-        }
-        int padding = targetWidth - visibleLength;
-        int left = padding / 2;
-        int right = padding - left;
-        return " ".repeat(left) + formattedText + " ".repeat(right);
-    }
-
-    private static String colorize(String text, String color) {
-        return BOLD + color + text + RESET;
+        System.out.print(format());
     }
 
     public static void main(String[] args) {

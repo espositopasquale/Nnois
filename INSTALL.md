@@ -138,7 +138,7 @@ models/
     `-- config.json
 ```
 
-The English model is [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd). Italian, French, German, Spanish, Portuguese, and Dutch use [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small). If the directories are elsewhere, set them for the current PowerShell session:
+The English model is [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd). Italian, French, Spanish, Portuguese, and Dutch use [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small). If the directories are elsewhere, set them for the current PowerShell session:
 
 ```powershell
 $env:NNOIS_WSD_MODEL_DIR = "C:\Models\graded-wsd"

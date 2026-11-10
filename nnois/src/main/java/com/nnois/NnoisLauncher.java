@@ -128,7 +128,7 @@ public final class NnoisLauncher {
     private static void printUsage() {
         System.out.println("Usage: nnois [run|demo|build-db|setup|repair-data] [options]");
         System.out.println("  --data-dir PATH   OMW data checkout (default: <project>/omw-data)");
-        System.out.println("  --language CODE   Demo language: en, it, fr, de, es, pt, or nl");
+        System.out.println("  --language CODE   Demo language: en, it, fr, es, pt, or nl");
         System.out.println("  --help            Show this help");
     }
 

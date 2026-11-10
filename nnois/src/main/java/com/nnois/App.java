@@ -8,6 +8,13 @@ import com.nnois.utils.TerminalColors;
 
 public class App {
     private static final int PAGE_SIZE = 12;
+    private static final String CYAN = "1;38;2;98;232;234";
+    private static final String RED = "1;38;2;255;95;114";
+    private static final String CREAM = "1;38;2;242;239;231";
+    private static final String GREEN = "1;38;2;107;224;168";
+    private static final String AMBER = "1;38;2;255;193;94";
+    private static final String VIOLET = "1;38;2;190;142;255";
+    private static final String MUTED = "38;2;132;145;148";
 
     interface AnalysisService {
         LanguageIdentification.Detection detect(String text);
@@ -28,8 +35,7 @@ public class App {
     }
 
     static void runSession(AnalysisService service, Scanner input) {
-        System.out.println(style("Compare words across languages through shared meanings.", "1;97"));
-        System.out.println(style("Enter text. Commands: demo, help, paste, exit. Use back to cancel a step.\n", "90"));
+        printWelcome();
         while (true) {
             String text = read(input, "Text");
             if (text == null || exit(text))
@@ -42,7 +48,7 @@ public class App {
                 try {
                     String requested = text.length() > 4 ? text.substring(4).strip()
                             : read(input,
-                                    "Demo language [Enter = all; en/it/fr/de/es/pt/nl; back]");
+                                    "Demo language [Enter = all; en/it/fr/es/pt/nl; back]");
                     if (requested == null || exit(requested))
                         break;
                     if (requested.equalsIgnoreCase("back"))
@@ -80,13 +86,11 @@ public class App {
                 if (language.equals("back"))
                     continue;
                 if (text.strip().split("\\s+").length == 1) {
+                    activity("Opening the sense explorer");
                     showSenses(input, service.senses(text, language));
                     continue;
                 }
-                System.out.println("\n  " + style("1", "1;96") + "  " + style("Whole-text comparison (default)", "92")
-                        + "\n  " + style("2", "1;96") + "  " + style("One word in context", "95")
-                        + "\n  " + style("3", "1;96") + "  " + style("Word alternatives", "95")
-                        + "\n  " + style("4", "1;96") + "  " + style("Automatic text modifier", "95"));
+                printModeMenu();
                 while (true) {
                     String mode = read(input, "Mode [1]");
                     if (mode == null || exit(mode))
@@ -94,10 +98,12 @@ public class App {
                     if (mode.equalsIgnoreCase("back"))
                         break;
                     if (mode.isEmpty() || mode.equals("1")) {
+                        activity("Mapping nominal vocabulary to shared senses");
                         showAnalysis(input, service.analyze(text, null, language));
                         break;
                     }
                     if (mode.equals("3")) {
+                        activity("Finding same-sense alternatives");
                         showAlternatives(input, text, language, service.analyze(text, null, language));
                         break;
                     }
@@ -130,6 +136,7 @@ public class App {
                             warning("Choose a word that appears in your text.");
                             continue;
                         }
+                        activity("Reading \"" + word + "\" in context");
                         showAnalysis(input, service.analyze(text, word, language));
                         break;
                     }
@@ -144,14 +151,15 @@ public class App {
             }
             System.out.println();
         }
-        System.out.println("Goodbye.");
+        System.out.println(style("\n  Keep listening for the patterns between languages.", MUTED));
+        System.out.println(style("  Goodbye.", CYAN));
     }
 
     private static void showRewrite(Scanner input, String text, String language, AnalysisService service)
             throws Exception {
         String reference;
         while (true) {
-            reference = read(input, "Comparison language [en/it/fr/de/es/pt/nl; back]");
+            reference = read(input, "Comparison language [en/it/fr/es/pt/nl; back]");
             if (reference == null || exit(reference))
                 throw new EndSession();
             if (reference.equalsIgnoreCase("back"))
@@ -195,13 +203,20 @@ public class App {
                 break;
             warning("Enter a number from 0 to 1.");
         }
+        activity("Testing same-sense replacements in context");
         var result = service.rewrite(new TextRewrite.Input(text, language, reference, direction, threshold));
         title("Modified text");
-        System.out.println(result.text());
-        System.out.printf(Locale.ROOT, "  Applied %d/%d proposals | threshold %.2f | considered %d units%n",
-                result.appliedChoices(), result.requestedChoices(), result.minimumChange(), result.consideredUnits());
-        result.choices().forEach(c -> System.out.printf(Locale.ROOT, "  %s -> %s  %+.2f  [%s]%n",
-                c.source(), c.target(), c.delta(), c.status()));
+        System.out.println("  " + style(result.text(), CREAM));
+        System.out.printf(Locale.ROOT, "\n  %s  %s  %s%n",
+                metric("APPLIED", result.appliedChoices() + "/" + result.requestedChoices(), GREEN),
+                metric("THRESHOLD", String.format(Locale.ROOT, "%.2f", result.minimumChange()), VIOLET),
+                metric("UNITS", Integer.toString(result.consideredUnits()), CYAN));
+        result.choices().forEach(c -> {
+            String color = "accepted".equals(c.status()) ? GREEN : "rejected".equals(c.status()) ? RED : AMBER;
+            System.out.printf(Locale.ROOT, "  %s %s %s %s%n", style(glyph("•", "*"), color),
+                    style(c.source(), CREAM), style(glyph("→", "->"), MUTED), style(c.target(), color));
+            System.out.printf(Locale.ROOT, "    change %+.2f  %s%n", c.delta(), style(c.status(), color));
+        });
         result.warnings().forEach(App::warning);
     }
 
@@ -216,7 +231,7 @@ public class App {
         }
         String reference;
         while (true) {
-            reference = read(input, "Comparison language [en/it/fr/de/es/pt/nl; back]");
+            reference = read(input, "Comparison language [en/it/fr/es/pt/nl; back]");
             if (reference == null || exit(reference))
                 throw new EndSession();
             if (reference.equalsIgnoreCase("back"))
@@ -264,15 +279,19 @@ public class App {
             warning("Choose one of the listed occurrence numbers.");
         }
         var scale = SubstitutionDecoder.validate(text, available.get(index));
-        System.out.printf(Locale.ROOT, "  Original: %s  %.2f (%s)%n", scale.original(), scale.baseline(),
-                scale.referenceForm());
+        System.out.printf(Locale.ROOT, "  %s %s  %s  reference %s%n", style("ORIGINAL", MUTED),
+                style(scale.original(), CREAM), style(String.format(Locale.ROOT, "%.2f", scale.baseline()), CYAN),
+                style(scale.referenceForm(), VIOLET));
         warning("Model judgments are suggestions, not guarantees; review grammar and meaning before use.");
         System.out.println("  Validation: " + scale.validation());
         for (int i = 0; i < scale.candidates().size(); i++) {
             var candidate = scale.candidates().get(i);
-            System.out.printf(Locale.ROOT, "  %d. %s  %.2f (%+.2f; %s)%n", i + 1, candidate.replacement(),
-                    candidate.transparency(), candidate.change(), candidate.referenceForm());
-            System.out.println("     Context: " + candidate.validation());
+            System.out.printf(Locale.ROOT, "  %s %s  %s %s%n", numberBadge(i + 1),
+                    style(candidate.replacement(), CREAM),
+                    style(String.format(Locale.ROOT, "%.2f", candidate.transparency()),
+                            TerminalColors.scoreColor(candidate.transparency())),
+                    style(String.format(Locale.ROOT, "%+.2f", candidate.change()), VIOLET));
+            System.out.println(style("     Context: ", MUTED) + candidate.validation());
         }
         String selected = read(input, "Apply candidate number [Enter = none]");
         if (selected == null || exit(selected))
@@ -289,28 +308,34 @@ public class App {
             warning("Invalid candidate.");
             return;
         }
-        System.out.println("\n  Revised text:\n" + text.substring(0, scale.begin())
-                + scale.candidates().get(index).replacement() + text.substring(scale.end()));
+        System.out.println("\n  " + style("REVISED TEXT", GREEN));
+        System.out.println("  " + style(text.substring(0, scale.begin()), MUTED)
+                + style(scale.candidates().get(index).replacement(), GREEN)
+                + style(text.substring(scale.end()), MUTED));
     }
 
     private static String chooseLanguage(AnalysisService service, Scanner input, String text) {
         var detected = service.detect(text);
         title("Language");
-        System.out.printf(Locale.ROOT, "  Suggested  %s | model score %.3f%n",
-                style(LanguageIdentification.label(detected.code()), "1;92"), detected.confidence());
+        System.out.printf(Locale.ROOT, "  %s  %s  %s%n", style("SUGGESTED", MUTED),
+                style(LanguageIdentification.label(detected.code()), GREEN),
+                metric("MODEL", String.format(Locale.ROOT, "%.3f", detected.confidence()), CYAN));
         if (detected.uncertain()) {
             warning(detected.mixedLanguage()
                     ? "Several sentence languages detected. Analyze each language separately for best results."
                     : "Language is uncertain; short or mixed-language text may need a manual choice.");
-            System.out.println("  Alternatives: " + detected.alternatives().stream()
-                    .map(c -> String.format(Locale.ROOT, "%s %.3f", LanguageIdentification.label(c.code()),
-                            c.confidence()))
-                    .collect(java.util.stream.Collectors.joining(" | ")));
+            System.out.println("  " + style("ALTERNATIVES", MUTED) + "  " + detected.alternatives().stream()
+                    .map(c -> style(LanguageIdentification.label(c.code()), languageColor(c.code())) + " "
+                            + style(String.format(Locale.ROOT, "%.3f", c.confidence()), MUTED))
+                    .collect(java.util.stream.Collectors.joining(style(glyph("  ·  ", "  |  "), MUTED))));
         }
         boolean supported = LanguageIdentification.supported(detected.code());
         if (!supported)
             warning("This language has no bundled NLP models. Select a supported language to continue.");
-        System.out.println("  Languages: en / it / fr / de / es / pt / nl (names and ISO codes accepted)");
+        System.out.println("  " + style("LANGUAGES", MUTED) + "  "
+                + languageChip("en", "eng") + " " + languageChip("it", "ita") + " "
+                + languageChip("fr", "fra") + " " + languageChip("es", "spa") + " "
+                + languageChip("pt", "por") + " " + languageChip("nl", "nld"));
         while (true) {
             String choice = read(input, supported ? "Language [Enter = suggested]" : "Language code");
             if (choice == null || exit(choice))
@@ -322,7 +347,7 @@ public class App {
             String normalized = LanguageIdentification.normalizeCode(choice);
             if (LanguageIdentification.supported(normalized))
                 return normalized;
-            warning("Choose en, it, fr, de, es, pt or nl; use back to change the text.");
+            warning("Choose en, it, fr, es, pt or nl; use back to change the text.");
         }
     }
 
@@ -334,24 +359,25 @@ public class App {
             boolean interactive) {
         title(result.chosenWord == null ? "Whole-text comparison" : "Word: " + result.chosenWord);
         var coverage = result.nominalAggregate;
-        System.out.println("  " + style("Nominal coverage", "1;97") + "  "
-                + style(String.format(Locale.ROOT, "%.2f  %s", coverage.totalAggregateScore,
-                        bar(coverage.totalAggregateScore)),
-                        TerminalColors.scoreColor(coverage.totalAggregateScore)));
-        System.out.printf("  Words considered  %d / %d (stopwords excluded)%n", coverage.consideredWords,
-                coverage.totalWords);
-        if (result.chosenWord == null)
-            System.out.printf("  OMW units matched %d / %d%n", result.analyzedNominalUnits, coverage.totalNominalUnits);
-        System.out.println(style("  Coverage counts nouns; transparency measures spelling similarity.\n", "90"));
+        String coverageColor = TerminalColors.scoreColor(coverage.totalAggregateScore);
+        System.out.println("  " + metric("COVERAGE", String.format(Locale.ROOT, "%.2f", coverage.totalAggregateScore), coverageColor)
+                + "  " + style(bar(coverage.totalAggregateScore), coverageColor));
+        System.out.printf("  %s  %s", metric("WORDS", coverage.consideredWords + "/" + coverage.totalWords, CYAN),
+                result.chosenWord == null
+                        ? metric("OMW UNITS", result.analyzedNominalUnits + "/" + coverage.totalNominalUnits, VIOLET)
+                        : "");
+        System.out.println();
+        System.out.println(style("  Coverage counts nouns; transparency measures spelling similarity.\n", MUTED));
         var rows = result.transparencyResults.stream()
                 .filter(r -> r.lang != null && !sameLanguage(r.lang, result.detectedLanguage))
                 .sorted(Comparator.comparingDouble((TransparencyResult r) -> r.score).reversed()
                         .thenComparing(r -> r.lang).thenComparing(r -> r.lemma))
                 .toList();
         if (result.chosenWord != null && result.chosenSense != null) {
-            System.out.println("  " + style("Recognized sense", "1;96") + " | OMW "
-                    + result.chosenSense.offset + "-" + result.chosenSense.pos);
-            System.out.println("  " + style(result.chosenWord, "1;95") + " — " + result.chosenSense.gloss + "\n");
+            System.out.println("  " + style("RECOGNIZED SENSE", GREEN) + style("  OMW ", MUTED)
+                    + style(result.chosenSense.offset + "-" + result.chosenSense.pos, CYAN));
+            System.out.println("  " + style(result.chosenWord, VIOLET) + style(glyph("  —  ", "  -  "), MUTED)
+                    + style(result.chosenSense.gloss, CREAM) + "\n");
         }
         if (rows.isEmpty())
             warning("No cross-language matches found. Try another word or language.");
@@ -371,10 +397,10 @@ public class App {
                 for (var detail : result.nominalLanguageTransparencies) {
                     if (!detail.nominalUnit.equals(current)) {
                         current = detail.nominalUnit;
-                        System.out.println("\n  " + style(current, "1;95"));
+                        System.out.println("\n  " + style(glyph("◆ ", "* ") + current, VIOLET));
                     }
                     System.out.printf("  %s %s %s%n", languageCell(detail.language),
-                            style(String.format("%-28s", clip(detail.lemma, 28)), "97"),
+                            style(String.format("%-28s", clip(detail.lemma, 28)), CREAM),
                             style(String.format(Locale.ROOT, "%.2f", detail.score),
                                     TerminalColors.scoreColor(detail.score)));
                 }
@@ -403,10 +429,12 @@ public class App {
                         .add(new SenseWords(sense, entry.getValue()));
             }
         }
-        System.out.println("  Recognized senses first; applicability measures context, similarity measures spelling.");
+        System.out.println(style("  Recognized senses first" + glyph(" · ", " | ")
+                + "applicability measures context" + glyph(" · ", " | ") + "similarity measures spelling.", MUTED));
         for (var languages : units.values()) {
             System.out
-                    .println("\n  " + style(languages.values().iterator().next().get(0).sense().nominalUnit(), "1;95"));
+                    .println("\n  " + style(glyph("◆ ", "* ")
+                            + languages.values().iterator().next().get(0).sense().nominalUnit(), VIOLET));
             for (var entry : languages.entrySet()) {
                 System.out.println("\n  " + languageCell(entry.getKey()));
                 entry.getValue().sort(Comparator.comparing((SenseWords row) -> row.sense().selected()).reversed()
@@ -417,8 +445,9 @@ public class App {
                 for (var row : entry.getValue()) {
                     var sense = row.sense();
                     System.out.printf(Locale.ROOT, "    %s | applicability %.2f%n",
-                            style(sense.selected() ? "Recognized sense" : "Candidate sense",
-                                    sense.selected() ? "1;96" : "90"),
+                            style(sense.selected() ? glyph("● ", "* ") + "Recognized sense"
+                                            : glyph("○ ", "- ") + "Candidate sense",
+                                    sense.selected() ? GREEN : MUTED),
                             sense.applicabilityScore());
                     System.out.println("    " + sense.gloss());
                     for (var word : row.words())
@@ -429,14 +458,13 @@ public class App {
     }
 
     private static void printRows(List<TransparencyResult> rows, boolean showLemma) {
-        System.out.println(
-                style(String.format("  %-21s %6s  %s", "LANGUAGE", "SCORE", showLemma ? "TRANSLATION" : "TRANSPARENCY"),
-                        "1;96"));
-        System.out.println(style("  " + "-".repeat(65), "90"));
+        System.out.println(style(String.format("  %-21s %6s  %s", "LANGUAGE", "SCORE",
+                showLemma ? "TRANSLATION" : "TRANSPARENCY"), CYAN));
+        System.out.println(style("  " + glyph("─", "-").repeat(65), MUTED));
         for (var row : rows)
             System.out.printf("  %s %s  %s%n", languageCell(row.lang),
                     style(String.format(Locale.ROOT, "%6.2f", row.score), TerminalColors.scoreColor(row.score)),
-                    showLemma ? style(clip(row.lemma, 32), "97")
+                    showLemma ? style(clip(row.lemma, 32), CREAM)
                             : style(bar(row.score), TerminalColors.scoreColor(row.score)));
     }
 
@@ -450,8 +478,8 @@ public class App {
             if (i > 0 && i % 3 == 0 && !yes(input, "Show more senses? [y/N]"))
                 break;
             var sense = senses.get(i);
-            System.out.println("\n  " + style("Sense " + (i + 1), "1;95") + " | "
-                    + style("OMW " + sense.synsetOffset + "-" + sense.synsetPos, "96"));
+            System.out.println("\n  " + numberBadge(i + 1) + " " + style("SENSE", VIOLET) + "  "
+                    + style("OMW " + sense.synsetOffset + "-" + sense.synsetPos, CYAN));
             System.out.println(
                     "  " + (sense.gloss == null || sense.gloss.isBlank() ? "No definition available." : sense.gloss));
             Map<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
@@ -468,21 +496,23 @@ public class App {
     private static void printTranslations(List<Map.Entry<String, LinkedHashSet<String>>> entries) {
         for (var entry : entries)
             System.out.printf("  %s %s%n", languageCell(entry.getKey()),
-                    style(clip(String.join(", ", entry.getValue()), 46), "97"));
+                    style(clip(String.join(", ", entry.getValue()), 46), CREAM));
     }
 
     private static String languageCell(String code) {
-        String color = switch (LanguageIdentification.normalizeCode(code)) {
-            case "eng" -> "96";
-            case "ita" -> "92";
-            case "fra" -> "94";
-            case "deu" -> "93";
-            case "spa" -> "91";
-            case "por" -> "95";
-            case "nld" -> "36";
-            default -> "97";
+        return style(String.format("%-21s", clip(LanguageIdentification.label(code), 21)), languageColor(code));
+    }
+
+    private static String languageColor(String code) {
+        return switch (LanguageIdentification.normalizeCode(code)) {
+            case "eng" -> CYAN;
+            case "ita" -> GREEN;
+            case "fra" -> "1;38;2;111;174;255";
+            case "spa" -> RED;
+            case "por" -> VIOLET;
+            case "nld" -> "1;38;2;255;153;102";
+            default -> CREAM;
         };
-        return style(String.format("%-21s", clip(LanguageIdentification.label(code), 21)), color);
     }
 
     private static boolean sameLanguage(String a, String b) {
@@ -491,7 +521,9 @@ public class App {
 
     static String bar(double score) {
         int filled = (int) Math.round(Math.max(0, Math.min(1, score)) * 16);
-        return "[" + "#".repeat(filled) + ".".repeat(16 - filled) + "]";
+        return TerminalColors.unicodeEnabled()
+                ? "▰".repeat(filled) + "▱".repeat(16 - filled)
+                : "[" + "#".repeat(filled) + ".".repeat(16 - filled) + "]";
     }
 
     static String clip(String value, int width) {
@@ -502,7 +534,7 @@ public class App {
     }
 
     private static String read(Scanner input, String prompt) {
-        System.out.print(style(prompt, "36") + " > ");
+        System.out.print("  " + style(glyph("›", ">"), RED) + " " + style(prompt, CYAN) + "  ");
         System.out.flush();
         return input.hasNextLine() ? input.nextLine().strip() : null;
     }
@@ -526,34 +558,93 @@ public class App {
     }
 
     private static void title(String title) {
-        System.out.println("\n" + style(title, "1;96") + "\n" + style("-".repeat(72), "90"));
+        int tail = Math.max(4, 66 - Math.min(62, title.length()));
+        if (TerminalColors.unicodeEnabled()) {
+            System.out.println("\n  " + style("╭─", MUTED) + " " + style(title, CYAN)
+                    + " " + style("─".repeat(tail) + "╮", MUTED));
+        } else {
+            System.out.println("\n  -- " + title + " " + "-".repeat(tail));
+        }
     }
 
     private static void warning(String text) {
-        System.out.println(style("  " + text, "33"));
+        System.out.println(style("  " + glyph("⚠", "!") + " ", AMBER) + style(text, AMBER));
     }
 
     private static String style(String text, String code) {
         return TerminalColors.style(text, code);
     }
 
+    private static String glyph(String rich, String plain) {
+        return TerminalColors.unicodeEnabled() ? rich : plain;
+    }
+
+    private static void printWelcome() {
+        System.out.println("  " + pill("EXPLORE", CYAN) + " "
+                + style("Compare written forms through shared meanings.", CREAM));
+        System.out.println(style("  Paste text to begin, or use a shortcut below.", MUTED));
+        String separator = style(glyph(" · ", " | "), MUTED);
+        System.out.println("  " + style("demo", GREEN) + separator
+                + style("paste", CYAN) + separator
+                + style("help", VIOLET) + separator + style("exit", RED) + "\n");
+    }
+
+    private static void printModeMenu() {
+        title("Choose an exploration");
+        System.out.println("  " + numberBadge(1) + " " + style("Compare the whole text", GREEN)
+                + style("  default", MUTED));
+        System.out.println("      " + style("Map nominal vocabulary across languages.", MUTED));
+        System.out.println("  " + numberBadge(2) + " " + style("Focus on one word", CYAN));
+        System.out.println("      " + style("Use its sentence to select a meaning.", MUTED));
+        System.out.println("  " + numberBadge(3) + " " + style("Explore alternatives", VIOLET));
+        System.out.println("      " + style("Compare same-sense forms and spelling distance.", MUTED));
+        System.out.println("  " + numberBadge(4) + " " + style("Reshape the text", RED));
+        System.out.println("      " + style("Try contextual same-language replacements.", MUTED));
+    }
+
+    private static void activity(String text) {
+        System.out.println("\n  " + style(glyph("◌", "*"), CYAN) + " " + style(text, CREAM)
+                + style(glyph("  ·  ", "  |  ") + "this may take a moment", MUTED));
+    }
+
+    private static String metric(String label, String value, String color) {
+        return style(label + " ", MUTED) + style(value, color);
+    }
+
+    private static String pill(String text, String color) {
+        return style(" " + text + " ", color);
+    }
+
+    private static String numberBadge(int number) {
+        return style("[" + number + "]", CYAN);
+    }
+
+    private static String languageChip(String label, String code) {
+        return style(" " + label + " ", languageColor(code));
+    }
+
+    private static void helpRow(String command, String explanation, String color) {
+        System.out.println("  " + style(String.format("%-7s", command), color) + style(explanation, MUTED));
+    }
+
     private static void help() {
-        System.out.println("\n  Enter a sentence for whole-text or chosen-word comparison.");
-        System.out.println("  Enter a single word to explore its possible OMW senses.");
-        System.out.println("  demo   Run Java demos for all seven languages or choose one (also: demo it)");
-        System.out.println("  paste  Multi-line input, finished by a single '.'");
-        System.out.println("  back   Cancel language, mode or target selection");
-        System.out.println("  exit   End the session (also quit)\n");
+        title("Help & shortcuts");
+        System.out.println("  " + style("Write naturally", CREAM) + style("  Enter a passage, sentence, or one word.", MUTED));
+        helpRow("demo", "Run all six demos, or choose one: demo it", GREEN);
+        helpRow("paste", "Paste multiple lines; finish with a single '.'", CYAN);
+        helpRow("back", "Return from the current choice", VIOLET);
+        helpRow("exit", "End the session; 'quit' also works", RED);
+        System.out.println(style("\n  Tip: press Enter whenever the highlighted default feels right.\n", MUTED));
     }
 
     static void runDemo(AnalysisService service, String language) throws Exception {
         var samples = DemoTexts.SAMPLES.stream().filter(s -> language == null
                 || s.language().equals(LanguageIdentification.normalizeCode(language))).toList();
         if (samples.isEmpty())
-            throw new IllegalArgumentException("Demo language must be en, it, fr, de, es, pt or nl.");
+            throw new IllegalArgumentException("Demo language must be en, it, fr, es, pt or nl.");
         title("European languages demo");
-        System.out.println("Parallel passages: nature, education, markets, and the future of a community.");
-        System.out.println("Each sample shows language detection, whole-text coverage, and one word's OMW sense.");
+        System.out.println(style("  Parallel passages about nature, education, markets, and community.", CREAM));
+        System.out.println(style("  Each sample reveals detection, coverage, and one contextual OMW sense.", MUTED));
         int correct = 0;
         List<String> summary = new ArrayList<>();
         try (Scanner noPrompts = new Scanner("")) {
@@ -562,7 +653,7 @@ public class App {
                 StringBuilder line = new StringBuilder();
                 for (String word : sample.text().split("\\s+")) {
                     if (line.length() + word.length() + 1 > 70) {
-                        System.out.println("  " + line);
+                        System.out.println("  " + style(line.toString(), CREAM));
                         line.setLength(0);
                     }
                     if (!line.isEmpty())
@@ -570,20 +661,22 @@ public class App {
                     line.append(word);
                 }
                 if (!line.isEmpty())
-                    System.out.println("  " + line);
+                    System.out.println("  " + style(line.toString(), CREAM));
                 var detected = service.detect(sample.text());
                 boolean matched = sameLanguage(sample.language(), detected.code());
                 if (matched)
                     correct++;
-                System.out.printf(Locale.ROOT, "\n  Detected: %s | model score %.3f | expected: %s%n",
-                        style(LanguageIdentification.label(detected.code()), matched ? "1;92" : "1;93"),
-                        detected.confidence(), sample.language());
+                System.out.printf(Locale.ROOT, "\n  %s %s  %s  %s%n", style("DETECTED", MUTED),
+                        style(LanguageIdentification.label(detected.code()), matched ? GREEN : AMBER),
+                        metric("MODEL", String.format(Locale.ROOT, "%.3f", detected.confidence()), CYAN),
+                        metric("EXPECTED", sample.language(), VIOLET));
                 if (detected.uncertain())
                     warning("Detection is uncertain; inspect the language choice.");
                 if (!LanguageIdentification.supported(detected.code())) {
                     warning("Unsupported detection; skipping analysis for this sample.");
                     continue;
                 }
+                activity("Tracing the " + LanguageIdentification.label(sample.language()) + " passage");
                 var aggregate = service.analyze(sample.text(), null, detected.code());
                 showAnalysis(noPrompts, aggregate, false);
                 showAnalysis(noPrompts, service.analyze(sample.text(), sample.target(), detected.code()), false);
@@ -594,13 +687,13 @@ public class App {
             }
         }
         title("Demo summary | " + correct + "/" + samples.size() + " languages detected correctly");
-        summary.forEach(System.out::println);
-        System.out.println("These examples demonstrate behavior; they are not an accuracy benchmark.");
+        summary.forEach(row -> System.out.println(style(row, CREAM)));
+        System.out.println(style("  These examples demonstrate behavior; they are not an accuracy benchmark.", MUTED));
     }
 
     public static void main(String[] args) {
         if (args.length > 0 && (!args[0].equals("--demo") || args.length > 2)) {
-            System.err.println("Usage: Nnois [--demo [en|it|fr|de|es|pt|nl]]");
+            System.err.println("Usage: Nnois [--demo [en|it|fr|es|pt|nl]]");
             return;
         }
         Banner.print();

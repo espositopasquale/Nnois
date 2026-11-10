@@ -36,4 +36,23 @@ public class MultilingualOmwDisambiguatorTest {
             assertFalse("Expected multilingual transparency results", result.transparencyResults.isEmpty());
         }
     }
+
+    @Test public void resolvesLanguagesWhoseOmwEntriesOmitGlosses() throws Exception {
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database());
+             var disambiguator = new NativeOmwDisambiguator(connection)) {
+            assertResolved(disambiguator, "banque", "fra", "La banque approuve le pret de la famille");
+            assertResolved(disambiguator, "banco", "spa", "El banco aprueba el prestamo para la familia");
+            assertResolved(disambiguator, "bank", "nld", "De bank keurt de lening voor het gezin goed");
+        }
+    }
+
+    private static void assertResolved(NativeOmwDisambiguator disambiguator, String lemma,
+            String language, String sentence) throws Exception {
+        var result = disambiguator.analyze(lemma, language,
+                OccurrenceContext.uniqueTarget(sentence, lemma), Set.of(), "n");
+        assertFalse(language + " OMW candidates missing", result.candidates().isEmpty());
+        assertTrue(language + " candidates still have no definitions",
+                result.candidates().stream().allMatch(item -> !item.candidate().gloss.isBlank()));
+        assertNotNull(language + " scores did not resolve a sense", result.selected());
+    }
 }

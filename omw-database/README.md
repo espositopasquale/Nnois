@@ -161,7 +161,7 @@ For overall OMW citation, see:
 ## Performance
 
 - **Build time:** ~30 seconds to 2 minutes (depending on OMW size and disk speed)
-- **Database size:** ~50–150 MB (uncompressed) for seven European languages
+- **Database size:** ~50–150 MB (uncompressed) for six European languages
 - **Query latency:** <10ms for indexed lookups after build completes
 
 ## Troubleshooting
@@ -190,7 +190,7 @@ To add columns or tables:
 To build a database for only specific languages, modify the `TAB_FILES_PATTERN` or add a language filter:
 
 ```python
-LANGUAGES_TO_INCLUDE = {"eng", "ita", "fra", "deu", "spa", "por", "nld"}
+LANGUAGES_TO_INCLUDE = {"eng", "ita", "fra", "spa", "por", "nld"}
 
 for file_path in tab_files:
     # ... extract lang ...

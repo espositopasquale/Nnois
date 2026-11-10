@@ -7,12 +7,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import opennlp.tools.langdetect.LanguageDetectorME;
 import opennlp.tools.langdetect.LanguageDetectorModel;
 
 public final class LanguageIdentification {
     private static final Map<String, String> NAMES = Map.of("eng", "English", "ita", "Italian",
             "fra", "French", "deu", "German", "spa", "Spanish", "por", "Portuguese", "nld", "Dutch");
+    private static final Set<String> SUPPORTED_INPUTS = Set.of("eng", "ita", "fra", "spa", "por", "nld");
     private final LanguageDetectorME detector;
     public record Candidate(String code, double confidence) { }
     public record Detection(String code, double confidence, List<Candidate> alternatives,
@@ -73,7 +75,7 @@ public final class LanguageIdentification {
             case "nl", "dut", "dutch" -> "nld"; default -> code;
         };
     }
-    public static boolean supported(String code) { return NAMES.containsKey(normalizeCode(code)); }
+    public static boolean supported(String code) { return SUPPORTED_INPUTS.contains(normalizeCode(code)); }
     public static String label(String code) {
         String normalized = normalizeCode(code);
         return NAMES.getOrDefault(normalized, normalized) + " (" + normalized + ")";

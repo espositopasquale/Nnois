@@ -16,6 +16,22 @@ MODULE = ROOT / "nnois"
 RESOURCES = MODULE / "src/main/resources/omw"
 
 
+def configure_console():
+    """Use UTF-8 for multilingual lexical forms in attached Windows consoles."""
+    os.environ.setdefault("COLUMNS", str(shutil.get_terminal_size(fallback=(100, 24)).columns))
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleCP(65001)
+        kernel32.SetConsoleOutputCP(65001)
+    except (AttributeError, OSError):
+        # Redirected output has no console code page; the JVM flags below still
+        # preserve UTF-8 for consumers that decode the stream accordingly.
+        pass
+
+
 def executable(name):
     found = shutil.which(name)
     if not found:
@@ -96,17 +112,19 @@ def start_app(maven=None, app_args=()):
          "-Dmdep.includeScope=runtime", "-Dmdep.outputFile=target/runtime-classpath.txt"], MODULE)
     classpath_file = MODULE / "target/runtime-classpath.txt"
     classpath = str(MODULE / "target/classes") + os.pathsep + classpath_file.read_text().strip()
-    run([java, "-cp", classpath, "com.nnois.App", *app_args], MODULE)
+    run([java, "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8",
+         "-cp", classpath, "com.nnois.App", *app_args], MODULE)
 
 
 def main(argv=None):
+    configure_console()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("run", "demo", "build-db", "setup", "repair-data"), nargs="?", default="run",
-                        help="default: start app with automatic setup; demo: analyze seven European language samples; build-db: rebuild DB; setup: rebuild DB and start; repair-data: recover a failed clone")
+                        help="default: start app with automatic setup; demo: analyze six European language samples; build-db: rebuild DB; setup: rebuild DB and start; repair-data: recover a failed clone")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "omw-data")
     parser.add_argument("--fetch-data", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--maven", help="Path to mvn or mvn.cmd when Maven is not on PATH")
-    parser.add_argument("--language", help="Demo language (en, it, fr, de, es, pt, nl); default: all seven")
+    parser.add_argument("--language", help="Demo language (en, it, fr, es, pt, nl); default: all six")
     args = parser.parse_args(argv)
     if args.language and args.command != "demo":
         parser.error("--language is only available with demo")

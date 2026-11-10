@@ -21,6 +21,7 @@ import edu.mit.jwi.item.IVersion;
 import edu.mit.jwi.item.IWord;
 import edu.mit.jwi.item.IWordID;
 import edu.mit.jwi.item.POS;
+import edu.mit.jwi.item.SynsetID;
 import edu.mit.jwi.morph.WordnetStemmer;
 
 public final class WordNetRepository implements AutoCloseable {
@@ -100,6 +101,26 @@ public final class WordNetRepository implements AutoCloseable {
     public String version() {
         IVersion version = dictionary.getVersion();
         return version == null ? "unspecified" : version.getMajorVersion() + "." + version.getMinorVersion();
+    }
+
+    /**
+     * Returns the Princeton WordNet gloss for an OMW 3.0 synset identifier.
+     * OMW projects are allowed to omit definitions, while their offsets still
+     * point at the corresponding English WordNet synset.
+     */
+    public String gloss(String offset, String tag) {
+        POS pos = switch (tag == null ? "" : tag.toLowerCase(Locale.ROOT)) {
+            case "n" -> POS.NOUN;
+            case "v" -> POS.VERB;
+            case "a", "s" -> POS.ADJECTIVE;
+            case "r" -> POS.ADVERB;
+            default -> null;
+        };
+        if (pos == null || offset == null || !offset.matches("\\d{8}")) {
+            return "";
+        }
+        ISynset synset = dictionary.getSynset(new SynsetID(Integer.parseInt(offset), pos));
+        return synset == null || synset.getGloss() == null ? "" : synset.getGloss();
     }
 
     public static POS pos(String tag) {

@@ -53,6 +53,7 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
         Objects.requireNonNull(context, "Original context and target offsets are required");
         List<CandidateSynset> candidates = candidates(lemma, normalizedLanguage, preferredPos);
         if (candidates.isEmpty()) return new Result("unlinked", null, List.of());
+        if (!"eng".equals(normalizedLanguage)) candidates = withEnglishGlossFallback(candidates);
         List<CandidateSynset> defined = candidates.stream().filter(c -> !c.gloss.isBlank()).toList();
         if (defined.isEmpty()) return new Result("missing-english-definition", null, List.of());
         try {
@@ -79,6 +80,34 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
             throw new IllegalStateException(("eng".equals(normalizedLanguage) ? "graded-wsd" : "multilingual E5")
                     + " failed for '" + lemma + "': " + error.getMessage(), error);
         }
+    }
+
+    private List<CandidateSynset> withEnglishGlossFallback(List<CandidateSynset> candidates) {
+        if (candidates.stream().allMatch(candidate -> !candidate.gloss.isBlank())) return candidates;
+        try {
+            WordNetRepository repository = wordnet();
+            List<CandidateSynset> enriched = new ArrayList<>(candidates.size());
+            for (CandidateSynset candidate : candidates) {
+                String gloss = candidate.gloss.isBlank()
+                        ? repository.gloss(candidate.offset, candidate.pos) : candidate.gloss;
+                enriched.add(new CandidateSynset(candidate.offset, candidate.pos, gloss, candidate.matchedLemma));
+            }
+            return List.copyOf(enriched);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("Cannot load English WordNet definitions: " + error.getMessage(), error);
+        }
+    }
+
+    private WordNetRepository wordnet() throws java.io.IOException {
+        if (wordnet == null) {
+            var dictionary = WordNetRepository.configured();
+            if (!dictionary.version().equals("3.0")) {
+                dictionary.close();
+                throw new IllegalArgumentException("OMW offset lookup requires Princeton WordNet 3.0");
+            }
+            wordnet = dictionary;
+        }
+        return wordnet;
     }
 
     private List<CandidateSynset> candidates(String lemma, String language, String preferredPos) throws SQLException {
@@ -109,14 +138,7 @@ public final class NativeOmwDisambiguator implements AutoCloseable {
             return List.copyOf(result);
         }
         try {
-            if (wordnet == null) {
-                var dictionary = WordNetRepository.configured();
-                if (!dictionary.version().equals("3.0")) {
-                    dictionary.close();
-                    throw new IllegalArgumentException("OMW offset lookup requires Princeton WordNet 3.0");
-                }
-                wordnet = dictionary;
-            }
+            wordnet();
             var result = new LinkedHashMap<String, CandidateSynset>();
             List<String> tags = pos == null ? List.of("NN", "VB", "JJ", "RB") : List.of(switch (pos) {
                 case "n" -> "NN"; case "v" -> "VB"; case "a" -> "JJ"; default -> "RB";
