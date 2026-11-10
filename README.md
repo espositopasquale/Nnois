@@ -68,7 +68,7 @@ For second-language acquisition, Nnois is most useful as a prompt for guided com
 - Multilingual lexical SQLite data at `nnois/src/main/resources/omw/omw_multilingual.db`
 - Local ONNX model assets for contextual sense selection; model files are intentionally excluded from Git and release archives
 
-Language-specific OpenNLP models improve tokenization, POS tagging, noun-phrase extraction, and lemmatization. The Maven configuration includes models for English, Italian, German, French, Spanish, Portuguese, and Dutch; the application falls back where models are unavailable.
+Language-specific OpenNLP models improve tokenization, POS tagging, noun-phrase extraction, and lemmatization. The Maven configuration includes models for English, Italian, French, Spanish, Portuguese, and Dutch; the application falls back where models are unavailable.
 
 ## Quick Start
 
@@ -129,22 +129,27 @@ You can also run `com.nnois.App` directly from an IDE after marking `src/main/re
 
 The Java CLI exposes four analysis modes. Whole-text comparison measures a text against OMW lexicalizations; one-word analysis selects a contextual occurrence; word alternatives builds a deterministic replacement scale; and the automatic modifier applies only decoder-approved candidates across a text.
 
-Type `demo` at the Java app's `Text >` prompt, then press Enter for all seven languages or choose one. You can also type `demo it` directly. The demo returns to the text prompt when finished; `back` cancels the language selection. The passages, demo runner, detection, analysis, and rendering are implemented in Java. Python is an optional setup and launch helper.
+Type `demo` at the Java app's `Text >` prompt, then press Enter for all six languages or choose one. You can also type `demo it` directly. The demo returns to the text prompt when finished; `back` cancels the language selection. The passages, demo runner, detection, analysis, and rendering are implemented in Java. Python is an optional setup and launch helper.
 
-Run `python nnois.py demo` for a noninteractive demonstration of English, Italian, French, German, Spanish, Portuguese, and Dutch. Use `python nnois.py demo --language it` for one language. Each substantial parallel passage shows the detected language, nominal coverage, leading translation scores, and a contextual OMW sense for the local word for river. A final summary compares the languages. The demo reuses the installed database and uses the detected language for analysis. Read the passages in [DEMO_TEXTS.md](DEMO_TEXTS.md). The examples demonstrate functionality; they are not an accuracy benchmark.
+Run `python nnois.py demo` for a noninteractive demonstration of English, Italian, French, Spanish, Portuguese, and Dutch. Use `python nnois.py demo --language it` for one language. Each substantial parallel passage shows the detected language, nominal coverage, leading translation scores, and a contextual OMW sense for the local word for river. A final summary compares the languages. The demo reuses the installed database and uses the detected language for analysis. Read the passages in [DEMO_TEXTS.md](DEMO_TEXTS.md). The examples demonstrate functionality; they are not an accuracy benchmark.
 
-Enter text at `Text >`. Nnois suggests a language before analysis: press Enter to accept it, or type a language name, two-letter code, or three-letter code. Supported NLP languages are English, Italian, French, German, Spanish, Portuguese, and Dutch.
+Enter text at `Text >`. Nnois suggests a language before analysis: press Enter to accept it, or type a language name, two-letter code, or three-letter code. Supported NLP languages are English, Italian, French, Spanish, Portuguese, and Dutch.
+
+The interactive CLI uses a high-contrast cyan, coral, green, violet, and amber palette for prompts, progress, scores, language labels, and warnings. Set the standard `NO_COLOR` environment variable to disable ANSI styling, or set `FORCE_COLOR=1` when running through a terminal wrapper that supports color but is not detected automatically. Windows uses ASCII-safe symbols by default to avoid code-page replacement characters; set `NNOIS_UNICODE=1` only when the terminal is configured for UTF-8.
 
 ```text
-Text > The children are reading a book in the garden.
-Suggested  English (eng) | model score 0.065
-Language [Enter = suggested] >
+> Text  The children are reading a book in the garden.
+-- Language ------------------------------------------------------------
+SUGGESTED  English (eng)  MODEL 0.065
+LANGUAGES  en  it  fr  es  pt  nl
+> Language [Enter = suggested]
 
-  1  Whole-text comparison (default)
-  2  One word in context
-  3  Word alternatives
-  4  Automatic text modifier
-Mode [1] >
+-- Choose an exploration ----------------------------------------------
+[1] Compare the whole text  default
+[2] Focus on one word
+[3] Explore alternatives
+[4] Reshape the text
+> Mode [1]
 ```
 
 Press Enter for whole-text comparison. Choose `2` for a specific content word, `3` to inspect alternatives for one occurrence, or `4` to modify eligible words throughout the text. Modes 3 and 4 ask for a comparison language and whether the result should be more or less orthographically similar. Replacements always remain in the detected or selected source language. Invalid targets and stopwords prompt you to try again. A single-word input opens the OMW sense explorer directly.
@@ -245,7 +250,7 @@ Many word forms are polysemous: the same spelling can represent several meanings
 
 ### Local model for OMW sense selection
 
-Nnois runs contextual sense selection locally in Java through ONNX Runtime. It uses [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd) for English context and [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) for Italian, French, German, Spanish, Portuguese, and Dutch. Place the exported assets in these default directories:
+Nnois runs contextual sense selection locally in Java through ONNX Runtime. It uses [ChangeIsKey/graded-wsd](https://huggingface.co/ChangeIsKey/graded-wsd) for English context and [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) for Italian, French, Spanish, Portuguese, and Dutch. Place the exported assets in these default directories:
 
 ```text
 models/
@@ -330,7 +335,6 @@ The pipeline normalizes common ISO 639-2 codes for OpenNLP while resolving the f
 | `eng` | `en` |
 | `ita` | `it` |
 | `fra` | `fr` |
-| `deu` | `de` |
 | `spa` | `es` |
 | `por` | `pt` |
 | `nld` | `nl` |
