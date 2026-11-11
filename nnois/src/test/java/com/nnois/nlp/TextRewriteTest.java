@@ -57,11 +57,15 @@ public class TextRewriteTest {
         assertEquals(0, failed.appliedChoices());
     }
     @Test public void acceptsEverySupportedSourceLanguage() {
-        for (String source : List.of("en", "it", "fr", "de", "es", "pt", "nl")) {
+        for (String source : List.of("en", "it", "fr", "es", "pt", "nl")) {
             String reference = source.equals("en") ? "it" : "en";
             assertEquals(LanguageIdentification.normalizeCode(source), TextRewrite.validate(
                     new TextRewrite.Input("testo", source, reference, "more")).sourceLanguage());
         }
+    }
+    @Test public void rejectsGermanUntilACompatibleLexiconIsBundled() {
+        expectFailure(IllegalArgumentException.class,
+                () -> TextRewrite.validate(new TextRewrite.Input("Text", "de", "en", "more")));
     }
     @Test public void overlapsChooseLongestAtSamePosition() {
         var p = TextRewrite.plan(input("hospital ward", "more"), List.of(sense("hospital",0,8,true), sense("hospital ward",0,13,true)));

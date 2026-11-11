@@ -2,6 +2,22 @@
 
 All notable changes to Nnois are documented in this file.
 
+## [0.2.1] - 2026-11-11
+
+### Added
+
+- A refreshed interactive CLI with clearer prompts, compact result summaries, progress feedback, and terminal-aware color output.
+
+### Changed
+
+- Prioritized the principal comparison languages in result tables while keeping the full ranking available on request.
+- Aligned the supported input-language set with bundled lexical coverage; German input is deferred until a compatible lexicon can be distributed with Nnois.
+
+### Fixed
+
+- Improved multilingual sense selection when a source synset has no localized gloss by using its shared English definition as a fallback.
+- Improved Unicode rendering and terminal-width handling, particularly in the Windows launcher.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

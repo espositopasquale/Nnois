@@ -1,4 +1,4 @@
-# Installing and running Nnois 0.2.0
+# Installing and running Nnois 0.2.1
 
 ## Requirements
 
@@ -124,7 +124,7 @@ export NNOIS_MULTILINGUAL_WSD_MODEL_DIR="/path/to/models/multilingual-e5-small"
 
 ## Contextual models
 
-Release 0.2.0 performs word-sense disambiguation locally in the Java process. Download or export the models separately; their binaries are excluded from Git and release archives. From the repository root, use this layout:
+Release 0.2.1 performs word-sense disambiguation locally in the Java process. Download or export the models separately; their binaries are excluded from Git and release archives. From the repository root, use this layout:
 
 ```text
 models/

@@ -6,7 +6,7 @@
 
   <strong>Normalized Natural-language Orthographic Index of Similarity</strong><br>
   A multilingual orthographic transparency analysis tool<br>
-  <strong>Version 0.2.0</strong> · <a href="CHANGELOG.md">Changelog</a>
+  <strong>Version 0.2.1</strong> · <a href="CHANGELOG.md">Changelog</a>
 
 </p>
 
